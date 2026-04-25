@@ -111,12 +111,15 @@ center_out_grid <- function(center, increment, length) {
   stopifnot(length(center) == length(length))
   grid_list <- vector("list", length(center))
   for (i in seq_along(center)) {
-    vec <- tryCatch({
-      center_out_uni(center[[i]], increment[[i]], length[[i]])
-    }, error = function(e) {
-      iter_msg <- paste0("Check index ", i)
-      stop(paste(e, iter_msg), call. = FALSE)
-    })
+    vec <- tryCatch(
+      {
+        center_out_uni(center[[i]], increment[[i]], length[[i]])
+      },
+      error = function(e) {
+        iter_msg <- paste0("Check index ", i)
+        stop(paste(e, iter_msg), call. = FALSE)
+      }
+    )
     grid_list[[i]] <- vec
   }
   grid <- expand.grid(grid_list)
@@ -192,14 +195,16 @@ get_iqr_objective <- function(beta_D, Y, X, D, Z, tau, ...) {
 #'  IQR objective
 #'
 #' @export
-gridsearch <- function(grid,
-                       Y,
-                       X,
-                       D,
-                       Z,
-                       tau,
-                       update = round(nrow(grid) / 20),
-                       ...) {
+gridsearch <- function(
+  grid,
+  Y,
+  X,
+  D,
+  Z,
+  tau,
+  update = round(nrow(grid) / 20),
+  ...
+) {
   msg <- "`update` is meant to be a single number less than `nrow(grid)`."
   send_note_if(msg, update > nrow(grid), stop, call. = FALSE)
   beta_Z_coef <- vector("list", length = nrow(grid))
@@ -215,8 +220,12 @@ gridsearch <- function(grid,
     objective[[i]] <- result$obj
   }
   beta_Z_coef <- do.call(rbind, beta_Z_coef)
-  result_with_min_obj <- cbind(iteration = seq_len(nrow(grid)),
-                               grid, beta_Z_coef, objective) %>%
+  result_with_min_obj <- cbind(
+    iteration = seq_len(nrow(grid)),
+    grid,
+    beta_Z_coef,
+    objective
+  ) %>%
     dplyr::mutate(min_obj = objective == min(objective))
 
   # print argmin of grid search
@@ -266,17 +275,19 @@ gridsearch <- function(grid,
 #'  the objective is the smallest within the grid search
 #'
 #' @export
-gridsearch_parallel <- function(grid,
-                                Y,
-                                X,
-                                D,
-                                Z,
-                                tau,
-                                log_dir = NULL,
-                                log_name = "gridsearch_results.csv",
-                                cores = parallel::detectCores()[1] - 2,
-                                show_progress = FALSE,
-                                ...) {
+gridsearch_parallel <- function(
+  grid,
+  Y,
+  X,
+  D,
+  Z,
+  tau,
+  log_dir = NULL,
+  log_name = "gridsearch_results.csv",
+  cores = parallel::detectCores()[1] - 2,
+  show_progress = FALSE,
+  ...
+) {
   # Start clock
   clock_start <- Sys.time()
   # message(paste("Clock started:", clock_start))
@@ -288,7 +299,10 @@ gridsearch_parallel <- function(grid,
     # note that date and time will be prepended: yymmdd_hhmmss
     log_path <- paste0(log_dir, "/", date_time, "_", log_name)
     if (file.exists(log_path)) {
-      stop(paste(log_path, "already exists. Choose a different `log_name` or `log_dir`."))
+      stop(paste(
+        log_path,
+        "already exists. Choose a different `log_name` or `log_dir`."
+      ))
     } else {
       create_log <- TRUE
       # create directory if nonexistent
@@ -309,26 +323,28 @@ gridsearch_parallel <- function(grid,
 
   # find IQR objective for each grid coordinate
   i <- NULL # avoid undefined global variable note in R CMD check results
-  result_gridsearch <- foreach (i = seq_len(nrow(grid)),
-                     .combine = rbind,
-                     .export = c("get_iqr_objective")) %dopar% {
+  result_gridsearch <- foreach(
+    i = seq_len(nrow(grid)),
+    .combine = rbind,
+    .export = c("get_iqr_objective")
+  ) %dopar%
+    {
+      beta_D_vec <- as.numeric(grid[i, ])
+      names(beta_D_vec) <- colnames(grid)
 
-    beta_D_vec <- as.numeric(grid[i, ])
-    names(beta_D_vec) <- colnames(grid)
+      tmp <- get_iqr_objective(beta_D_vec, Y, X, D, Z, tau, ...)
+      result <- c(i, beta_D_vec, tmp$beta_Z, tmp$beta_X, objective = tmp$obj)
+      names(result) <- cols
 
-    tmp <- get_iqr_objective(beta_D_vec, Y, X, D, Z, tau, ...)
-    result <- c(i, beta_D_vec, tmp$beta_Z, tmp$beta_X, objective = tmp$obj)
-    names(result) <- cols
-
-    # store results in log
-    if (create_log) {
-      file_path <- paste0(log_dir, "/", "iteration", i, ".csv")
-      file.create(file_path)
-      cat(result, sep = ",", file = file_path)
-      cat("\n", sep = ",", file = file_path, append = TRUE) # add newline at EOF
+      # store results in log
+      if (create_log) {
+        file_path <- paste0(log_dir, "/", "iteration", i, ".csv")
+        file.create(file_path)
+        cat(result, sep = ",", file = file_path)
+        cat("\n", sep = ",", file = file_path, append = TRUE) # add newline at EOF
+      }
+      result
     }
-    result
-  }
 
   # Find smallest IQR objective
   result_with_min_obj <- result_gridsearch %>%
@@ -342,7 +358,11 @@ gridsearch_parallel <- function(grid,
   }
 
   # print argmin of grid search
-  send_note_if(result_with_min_obj[result_with_min_obj$min_obj, ], show_progress, print) #nolint
+  send_note_if(
+    result_with_min_obj[result_with_min_obj$min_obj, ],
+    show_progress,
+    print
+  ) #nolint
 
   # Stop the clock
   clock_end <- Sys.time()
@@ -350,8 +370,10 @@ gridsearch_parallel <- function(grid,
   # message(paste("Clock stopped:", clock_end))
 
   # return results of grid evaluations
-  return(invisible(list(result = result_with_min_obj,
-                        date_time = date_time,
-                        log_name = log_name,
-                        time_elapsed = elapsed_time)))
+  return(invisible(list(
+    result = result_with_min_obj,
+    date_time = date_time,
+    log_name = log_name,
+    time_elapsed = elapsed_time
+  )))
 }

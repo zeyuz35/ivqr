@@ -36,11 +36,13 @@ alt_sample <- function(x, ...) {
 #' @return Result of \code{factor} multiplied by the output of \code{FUN}
 #'  evaluated at the quantile regression specified by \code{string_formula} and
 #'  \code{tau}
-manipulate_qr_residuals <- function(string_formula,
-                                    tau,
-                                    factor = 1,
-                                    FUN = stats::sd,
-                                    ...) {
+manipulate_qr_residuals <- function(
+  string_formula,
+  tau,
+  factor = 1,
+  FUN = stats::sd,
+  ...
+) {
   qr <- quantreg::rq(stats::as.formula(string_formula), tau)
   resid <- qr$resid
   fun_resid <- FUN(resid, ...)
@@ -79,7 +81,7 @@ linear_projection <- function(Y, ...) {
 #'
 #' @return Nearest order of magnitude larger than \code{x}
 round_to_magnitude <- function(x) {
-  10 ^ (ceiling(log10(x)))
+  10^(ceiling(log10(x)))
 }
 
 ### h_to_beta -------------------------
@@ -126,9 +128,7 @@ h_to_beta <- function(h, Y, X, D, Z, Phi = linear_projection(D, X, Z)) {
   beta_X <- beta_X_Phi[1:p_X]
   beta_Phi <- beta_X_Phi[(p_X + 1):p]
 
-  list("beta_D" = beta_D,
-       "beta_X" = beta_X,
-       "beta_Phi" = beta_Phi)
+  list("beta_D" = beta_D, "beta_X" = beta_X, "beta_Phi" = beta_Phi)
 }
 
 ### run_concentrated_qr
@@ -143,7 +143,15 @@ h_to_beta <- function(h, Y, X, D, Z, Phi = linear_projection(D, X, Z)) {
 #' @param tau Quantile (numeric)
 #'
 #' @return Results of QR(Y - D %*% beta_D ~ X + Phi) for a given \code{tau}
-run_concentrated_qr <- function(beta_D, Y, X, D, Z, Phi = linear_projection(D, X, Z), tau) {
+run_concentrated_qr <- function(
+  beta_D,
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau
+) {
   quantreg::rq(Y - D %*% beta_D ~ X + Phi - 1, tau = tau)
 }
 
@@ -174,11 +182,13 @@ run_concentrated_qr <- function(beta_D, Y, X, D, Z, Phi = linear_projection(D, X
 #'  }
 #'
 #' @seealso \code{\link{line_confint}}, \code{\link{line_confint_interpolation}}
-p_val_interpolation <- function(old_p_val,
-                                new_p_val,
-                                old_beta,
-                                new_beta,
-                                alpha) {
+p_val_interpolation <- function(
+  old_p_val,
+  new_p_val,
+  old_beta,
+  new_beta,
+  alpha
+) {
   pair_p_val <- c(old_p_val, new_p_val)
 
   msg <- "`old_beta` and `new_beta` are on same side of the confidence interval." #nolint
@@ -211,7 +221,10 @@ compute_foc_conditions <- function(
   h,
   beta_D = NULL,
   beta_X = NULL,
-  Y, X, D, Phi,
+  Y,
+  X,
+  D,
+  Phi,
   tau
 ) {
   if (is.null(beta_D)) {
@@ -229,7 +242,7 @@ compute_foc_conditions <- function(
       as.numeric(!is.element(i, h)) * # if index is in active basis, set xi to 0
       (tau - as.numeric(residuals[i] < 0)) *
       design[i, ] %*%
-      designh_inv
+        designh_inv
   }
   t(do.call(rbind, xi_i)) # p by n matrix; note: don't cbind row matrices
 }
@@ -338,8 +351,13 @@ parse_single_log <- function(log_path, information = "incumbent") {
   }
   if ("incumbent" %in% information) {
     incumbent_index <- grepl(pattern = "^(H|\\*)", log)
-    incumbent_warmstart_bool <- sum(grepl(pattern = "Loaded user MIP start with objective", log)) > 0
-    if (incumbent_warmstart_bool) { # include the warmstart solution as an incumbent solution
+    incumbent_warmstart_bool <- sum(grepl(
+      pattern = "Loaded user MIP start with objective",
+      log
+    )) >
+      0
+    if (incumbent_warmstart_bool) {
+      # include the warmstart solution as an incumbent solution
       # find start of table, then add three rows
       # first row below start is subheader; second row is empty; third row is warm-start!
       start_index <- grep(pattern = "Unexpl", log) + 3
@@ -354,7 +372,11 @@ parse_single_log <- function(log_path, information = "incumbent") {
   }
   if ("objective" %in% information) {
     incumbent_index <- grepl(pattern = "^(H|\\*)", log)
-    incumbent_warmstart_bool <- sum(grepl(pattern = "Loaded user MIP start with objective", log)) > 0
+    incumbent_warmstart_bool <- sum(grepl(
+      pattern = "Loaded user MIP start with objective",
+      log
+    )) >
+      0
     if (incumbent_warmstart_bool) {
       # find start of table, then add three rows
       # first row below start is subheader; second row is empty; third row is warm-start!
@@ -385,30 +407,29 @@ parse_single_log <- function(log_path, information = "incumbent") {
 #'  also can be "data.frame"
 #'
 #' @export
-parse_mult_logs <- function(log_dir,
-                            expr = "log$",
-                            information = "incumbent",
-                            value = "list") {
+parse_mult_logs <- function(
+  log_dir,
+  expr = "log$",
+  information = "incumbent",
+  value = "list"
+) {
   if (!dir.exists(log_dir)) {
     stop(paste("Directory not found:", log_dir))
   }
   files <- list.files(log_dir, pattern = expr)
-  info <- lapply(paste0(log_dir, "/", files),
-                 function(f){
-                   parse_single_log(f, information = "incumbent")
-                 })
+  info <- lapply(paste0(log_dir, "/", files), function(f) {
+    parse_single_log(f, information = "incumbent")
+  })
   names(info) <- files
   result <- info
   if (value == "data.frame") {
     max_soln <- max(sapply(info, length))
     # extend each entry in list to have same number of entries
-    extended_info <- lapply(info,
-      function(i) {
-        l <- length(i)
-        new <- max_soln - l
-        c(i, rep(NA, new))
-      }
-    )
+    extended_info <- lapply(info, function(i) {
+      l <- length(i)
+      new <- max_soln - l
+      c(i, rep(NA, new))
+    })
     result <- do.call(cbind, extended_info)
   }
   result

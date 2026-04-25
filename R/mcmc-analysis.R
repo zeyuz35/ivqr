@@ -15,10 +15,18 @@
 #' @return A named list with two elements
 #'  1. distance: vector with distances between neighbors and \code{reference}
 #'  2. status: vector indicating whether neighbor is inside polytope
-onestep <- function(subsample, reference,
-                    h, Y, X, D, Phi, tau,
-                    MEMBERSHIP_FCN = foc_membership_v3,
-                    ...) {
+onestep <- function(
+  subsample,
+  reference,
+  h,
+  Y,
+  X,
+  D,
+  Phi,
+  tau,
+  MEMBERSHIP_FCN = foc_membership_v3,
+  ...
+) {
   stopifnot(subsample[h] == 1)
   ones <- setdiff(which(subsample == 1), h)
   zeros <- which(subsample == 0)
@@ -47,8 +55,8 @@ onestep <- function(subsample, reference,
     }
   }
   list(
-       distance = distance_vec,
-       status = status_vec
+    distance = distance_vec,
+    status = status_vec
   )
 }
 
@@ -78,8 +86,14 @@ exhaustive_subsample_indices <- function(h, n, m) {
 # 1. status_vec: logical vector, TRUE when the subsample is inside FOC polytope
 # 2. subsample_list: list of n-vectors with m 1's with entries in h
 exhaustive_membership <- function(
-  h, n, m,
-  Y, X, D, Phi, tau,
+  h,
+  n,
+  m,
+  Y,
+  X,
+  D,
+  Phi,
+  tau,
   MEMBERSHIP_FCN = foc_membership_v3,
   ...
 ) {

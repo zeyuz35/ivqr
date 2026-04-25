@@ -32,10 +32,21 @@
 #'    \item \code{xi}: xi vector for this subsample
 #'  }
 # Q: Should the beta_*_proposal correspond to the same coefficients as h_to_beta(h)? If so, I don't even need the beta_*_proposal in the arguments. I can just use the h_to_beta(h) to get these coefficients...right?
-first_approach <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
-                           h, subsample_size,
-                           beta_D_proposal = NULL, beta_X_proposal = NULL, 
-                           gamma = 1, l_norm = 1, l_power = l_norm) {
+first_approach <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  h,
+  subsample_size,
+  beta_D_proposal = NULL,
+  beta_X_proposal = NULL,
+  gamma = 1,
+  l_norm = 1,
+  l_power = l_norm
+) {
   n <- length(Y)
   p_design <- length(h)
   subsample_set <- h # store indices of subsample
@@ -85,7 +96,7 @@ first_approach <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
 
     # for each row, apply e^(-gamma * (l-norm^l))
     raw_weights <- apply(sum_remaining, 1, function(x) {
-      tmp <- sum(abs(x)^l_norm) ^ (1 / l_norm)
+      tmp <- sum(abs(x)^l_norm)^(1 / l_norm)
       exp(-gamma * tmp^l_power)
     })
     # FIX: what if raw_weights are 0? then total_weights = 0, so then we get 0 / 0!!!
@@ -116,19 +127,22 @@ first_approach <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
     # })
 
     # choose 1 element in a single vector of size `length(weights)` to be 1
-    winner <- tryCatch({
-      list(
-        status = "OKAY",
-        answer = which(rmultinom(n = 1, size = 1, prob = weights) == 1)
-      )
-    }, error = function(e) {
-      list(
-        status = "ERROR",
-        status_message = e,
-        sum_remaining = sum_remaining,
-        problem_weights = weights # return problematic weights
-      )
-    })
+    winner <- tryCatch(
+      {
+        list(
+          status = "OKAY",
+          answer = which(rmultinom(n = 1, size = 1, prob = weights) == 1)
+        )
+      },
+      error = function(e) {
+        list(
+          status = "ERROR",
+          status_message = e,
+          sum_remaining = sum_remaining,
+          problem_weights = weights # return problematic weights
+        )
+      }
+    )
     if (winner$status == "ERROR") {
       return(winner)
     }
@@ -138,7 +152,8 @@ first_approach <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
     new_observation <- choices[winner]
     # TODO: store new_observation in new vector; then append to subsample_set after for loop
     subsample_set <- c(subsample_set, new_observation)
-    sum_across_subsample_set <- sum_across_subsample_set + s[new_observation, , drop = FALSE]
+    sum_across_subsample_set <- sum_across_subsample_set +
+      s[new_observation, , drop = FALSE]
   }
   prob <- prod(subsample_weights)
   log_prob <- sum(log(subsample_weights))
@@ -187,10 +202,21 @@ first_approach <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
 #'    \item \code{log_prob}: log of \code{prob}
 #'    \item \code{xi}: xi vector for this subsample
 #'  }
-first_approach_v2 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
-                              h, subsample_size,
-                              beta_D_proposal = NULL, beta_X_proposal = NULL, 
-                              gamma = 1, l_norm = 1, l_power = l_norm) {
+first_approach_v2 <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  h,
+  subsample_size,
+  beta_D_proposal = NULL,
+  beta_X_proposal = NULL,
+  gamma = 1,
+  l_norm = 1,
+  l_power = l_norm
+) {
   n <- length(Y)
   p_design <- length(h)
   subsample_set <- h # store indices of subsample
@@ -243,7 +269,7 @@ first_approach_v2 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
     # }
     # tmp <- sum(abs(max_result)^l_norm) ^ (1 / l_norm)
     # exp(-gamma * tmp^l_power)
-    tmp <- sum(abs(x)^l_norm) ^ (1 / l_norm)
+    tmp <- sum(abs(x)^l_norm)^(1 / l_norm)
     exp(-gamma * tmp^l_power)
     # 0.99 ^ (-gamma * tmp^l_power)
   })
@@ -256,32 +282,37 @@ first_approach_v2 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
   weights <- raw_weights / total_weights
 
   # choose remaining observations
-  winner <- tryCatch({
-    # make sure we don't draw any observation more than once
-    while_bool <- TRUE
-    while_counter <- 0
-    while (while_bool) {
-      while_counter <- while_counter + 1
-      # print(while_counter)
-      draws <- as.numeric(rmultinom(
-        n = 1, size = subsample_size - length(h), prob = weights
-      ))
-      if (identical(sort(unique(draws)), c(0, 1))) {
-        while_bool <- FALSE
+  winner <- tryCatch(
+    {
+      # make sure we don't draw any observation more than once
+      while_bool <- TRUE
+      while_counter <- 0
+      while (while_bool) {
+        while_counter <- while_counter + 1
+        # print(while_counter)
+        draws <- as.numeric(rmultinom(
+          n = 1,
+          size = subsample_size - length(h),
+          prob = weights
+        ))
+        if (identical(sort(unique(draws)), c(0, 1))) {
+          while_bool <- FALSE
+        }
       }
+      list(
+        status = "OKAY",
+        answer = which(draws == 1)
+      )
+    },
+    error = function(e) {
+      list(
+        status = "ERROR",
+        status_message = e,
+        sum_remaining = sum_remaining,
+        problem_weights = weights # return problematic weights
+      )
     }
-    list(
-      status = "OKAY",
-      answer = which(draws == 1)
-    )
-  }, error = function(e) {
-    list(
-      status = "ERROR",
-      status_message = e,
-      sum_remaining = sum_remaining,
-      problem_weights = weights # return problematic weights
-    )
-  })
+  )
   if (winner$status == "ERROR") {
     return(winner)
   }
@@ -289,7 +320,9 @@ first_approach_v2 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
   winner <- winner$answer
   new_observations <- choices[winner]
   subsample_set <- c(subsample_set, new_observations)
-  sum_across_subsample_set <- sum_across_subsample_set + matrix(1, nrow = 1, ncol = length(new_observations)) %*% s[new_observations, , drop = FALSE]
+  sum_across_subsample_set <- sum_across_subsample_set +
+    matrix(1, nrow = 1, ncol = length(new_observations)) %*%
+      s[new_observations, , drop = FALSE]
 
   subsample_weights <- weights[winner]
   prob <- prod(subsample_weights)
@@ -339,10 +372,21 @@ first_approach_v2 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
 #'    \item \code{log_prob}: log of \code{prob}
 #'    \item \code{xi}: xi vector for this subsample
 #'  }
-first_approach_v4 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
-                           h, subsample_size,
-                           beta_D_proposal = NULL, beta_X_proposal = NULL, 
-                           gamma = 1, l_norm = 1, l_power = l_norm) {
+first_approach_v4 <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  h,
+  subsample_size,
+  beta_D_proposal = NULL,
+  beta_X_proposal = NULL,
+  gamma = 1,
+  l_norm = 1,
+  l_power = l_norm
+) {
   n <- length(Y)
   p_design <- length(h)
   subsample_set <- h # store indices of subsample
@@ -392,7 +436,7 @@ first_approach_v4 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
 
     # for each row, apply e^(-gamma * (l-norm^l))
     raw_weights <- apply(sum_remaining, 1, function(x) {
-      tmp <- sum(abs(x)^l_norm) ^ (1 / l_norm)
+      tmp <- sum(abs(x)^l_norm)^(1 / l_norm)
       gamma / tmp^l_power
       # exp(-gamma * tmp^l_power)
     })
@@ -424,19 +468,22 @@ first_approach_v4 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
     # })
 
     # choose 1 element in a single vector of size `length(weights)` to be 1
-    winner <- tryCatch({
-      list(
-        status = "OKAY",
-        answer = which(rmultinom(n = 1, size = 1, prob = weights) == 1)
-      )
-    }, error = function(e) {
-      list(
-        status = "ERROR",
-        status_message = e,
-        sum_remaining = sum_remaining,
-        problem_weights = weights # return problematic weights
-      )
-    })
+    winner <- tryCatch(
+      {
+        list(
+          status = "OKAY",
+          answer = which(rmultinom(n = 1, size = 1, prob = weights) == 1)
+        )
+      },
+      error = function(e) {
+        list(
+          status = "ERROR",
+          status_message = e,
+          sum_remaining = sum_remaining,
+          problem_weights = weights # return problematic weights
+        )
+      }
+    )
     if (winner$status == "ERROR") {
       return(winner)
     }
@@ -446,7 +493,8 @@ first_approach_v4 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
     new_observation <- choices[winner]
     # TODO: store new_observation in new vector; then append to subsample_set after for loop
     subsample_set <- c(subsample_set, new_observation)
-    sum_across_subsample_set <- sum_across_subsample_set + s[new_observation, , drop = FALSE]
+    sum_across_subsample_set <- sum_across_subsample_set +
+      s[new_observation, , drop = FALSE]
   }
   prob <- prod(subsample_weights)
   log_prob <- sum(log(subsample_weights))
@@ -511,22 +559,30 @@ first_approach_v4 <- function(Y, X, D, Z, Phi = linear_projection(D, X, Z), tau,
 # TODO: test that we always accept the subsample if distance_method = "simple_random_walk"
 # TODO: create a separate function just to do the simple random walk without
 # any of the extra bells and whistles of MCMC
-random_walk_subsample <- function(initial_subsample,
-                                  h,
-                                  Y, X, D, Z, Phi = linear_projection(D, X, Z),
-                                  tau,
-                                  beta_D_proposal = NULL,
-                                  beta_X_proposal = NULL,
-                                  iter = 1000,
-                                  gamma = 1, l_norm = 1, l_power = 1,
-                                  k,
-                                  k_method = "constant",
-                                  distance_method = 1,
-                                  transform_method = "exp",
-                                  reference_subsample = NULL, # for distance_method = 2
-                                  s_i,
-                                  seed = Sys.date(),
-                                  save_memory = FALSE) {
+random_walk_subsample <- function(
+  initial_subsample,
+  h,
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  beta_D_proposal = NULL,
+  beta_X_proposal = NULL,
+  iter = 1000,
+  gamma = 1,
+  l_norm = 1,
+  l_power = 1,
+  k,
+  k_method = "constant",
+  distance_method = 1,
+  transform_method = "exp",
+  reference_subsample = NULL, # for distance_method = 2
+  s_i,
+  seed = Sys.date(),
+  save_memory = FALSE
+) {
   # k must be smaller than the number of observations in subsample minus the
   # observations in the active basis
   stopifnot(sum(initial_subsample) - length(h) > k)
@@ -585,15 +641,17 @@ random_walk_subsample <- function(initial_subsample,
     }
     s <- do.call(rbind, s_i)
     distance_function <- function(x) {
-      sum(abs(x) ^ l_norm) ^ (1 / l_norm)
+      sum(abs(x)^l_norm)^(1 / l_norm)
     }
     curr_s <- s[current_subsample == 1, ]
-    current_distance <- distance_function(matrix(1, nrow = 1, ncol = nrow(curr_s)) %*% curr_s)
+    current_distance <- distance_function(
+      matrix(1, nrow = 1, ncol = nrow(curr_s)) %*% curr_s
+    )
     current_distance_prob <- transform_function(current_distance)
   } else if (distance_method == 2) {
     # find norm of global subsample and current subsample
     distance_function <- function(x) {
-      sum(abs(x - reference_subsample)^l_norm) ^ (1 / l_norm)
+      sum(abs(x - reference_subsample)^l_norm)^(1 / l_norm)
     }
     current_distance <- distance_function(current_subsample)
     current_distance_prob <- transform_function(current_distance)
@@ -605,7 +663,7 @@ random_walk_subsample <- function(initial_subsample,
       # sum the column vectors of x
       sum_cols <- x %*% rep(1, ncol(x))
       # take norm of sum of s_i's
-      sum(abs(sum_cols)^l_norm) ^ (1 / l_norm)
+      sum(abs(sum_cols)^l_norm)^(1 / l_norm)
     }
     okay <- setdiff(seq_len(n), h)
     ones_current <- which(current_subsample[okay] == 1)
@@ -618,7 +676,7 @@ random_walk_subsample <- function(initial_subsample,
     distance_function <- function(x) {
       # sum the column vectors of x
       sum_cols <- x %*% rep(1, ncol(x))
-      left <- - tau - sum_cols
+      left <- -tau - sum_cols
       right <- sum_cols - (1 - tau)
       max_result <- vector("double", length(sum_cols))
       for (entry in seq_along(left)) {
@@ -626,7 +684,7 @@ random_walk_subsample <- function(initial_subsample,
         right_entry <- right[[entry]]
         max_result[[entry]] <- max(left_entry, right_entry, 0)
       }
-      tmp <- sum(abs(max_result)^l_norm) ^ (1 / l_norm)
+      tmp <- sum(abs(max_result)^l_norm)^(1 / l_norm)
       exp(-gamma * tmp^l_power) # TODO: is this correct? shouldn't this be transform_function?
       warning("need to double-check distance_method == 4")
     }
@@ -655,7 +713,7 @@ random_walk_subsample <- function(initial_subsample,
 
     distance_function <- function(x) {
       sum_cols <- rep(1, m) %*% x # TODO: double-check this
-      left <- - tau - sum_cols
+      left <- -tau - sum_cols
       right <- sum_cols - (1 - tau)
       max_result <- vector("double", length(h))
       for (entry in seq_along(h)) {
@@ -665,7 +723,7 @@ random_walk_subsample <- function(initial_subsample,
         # => max{...} = 0 => we satisfy FOC
         max_result[[entry]] <- max(left_entry, right_entry, 0)
       }
-      tmp <- sum(abs(max_result)^l_norm) ^ (1 / l_norm)
+      tmp <- sum(abs(max_result)^l_norm)^(1 / l_norm)
     }
 
     curr_s <- s[current_subsample == 1, ]
@@ -708,7 +766,9 @@ random_walk_subsample <- function(initial_subsample,
     # compute distance of proposal subsample
     if (distance_method == 1) {
       proposal_s <- s[proposal_subsample == 1, ]
-      proposal_distance <- distance_function(matrix(1, nrow = 1, ncol = nrow(proposal_s)) %*% proposal_s)
+      proposal_distance <- distance_function(
+        matrix(1, nrow = 1, ncol = nrow(proposal_s)) %*% proposal_s
+      )
       proposal_distance_prob <- transform_function(proposal_distance)
     } else if (distance_method == 2) {
       proposal_distance <- distance_function(proposal_subsample)
@@ -745,36 +805,43 @@ random_walk_subsample <- function(initial_subsample,
     # print(current_prob) # DEBUG:
     # print(i) # DEBUG:
 
-    accept_bool <- tryCatch({
-      a_log <- log(proposal_distance_prob) - log(current_distance_prob) + log(proposal_prob) - log(current_prob)
-      out_a_log[[i]] <- a_log
-      bool <- log(u) < a_log
-      # print(bool) # DEBUG:
-      stopifnot(is.logical(bool) & !is.na(bool))
-      list(
-        status = "OKAY",
-        bool = bool
-      )
-    }, error = function(e) {
-      list(
-        status = "ERROR",
-        status_message = e,
-        bool = bool,
-        a_log = a_log,
-        s_i_current = s_i_current,
-        s_i_proposal = s_i_proposal,
-        proposal_distance = proposal_distance,
-        current_distance = current_distance,
-        proposal_distance_prob = proposal_distance_prob,
-        current_distance_prob = current_distance_prob
-      )
-    })
+    accept_bool <- tryCatch(
+      {
+        a_log <- log(proposal_distance_prob) -
+          log(current_distance_prob) +
+          log(proposal_prob) -
+          log(current_prob)
+        out_a_log[[i]] <- a_log
+        bool <- log(u) < a_log
+        # print(bool) # DEBUG:
+        stopifnot(is.logical(bool) & !is.na(bool))
+        list(
+          status = "OKAY",
+          bool = bool
+        )
+      },
+      error = function(e) {
+        list(
+          status = "ERROR",
+          status_message = e,
+          bool = bool,
+          a_log = a_log,
+          s_i_current = s_i_current,
+          s_i_proposal = s_i_proposal,
+          proposal_distance = proposal_distance,
+          current_distance = current_distance,
+          proposal_distance_prob = proposal_distance_prob,
+          current_distance_prob = current_distance_prob
+        )
+      }
+    )
     if (accept_bool$status == "ERROR") {
       return(accept_bool)
     }
 
     accept_bool <- accept_bool$bool
-    if (accept_bool) { # accept
+    if (accept_bool) {
+      # accept
       current_subsample <- proposal_subsample
       current_distance <- proposal_distance
       current_distance_prob <- proposal_distance_prob

@@ -20,6 +20,7 @@ miqcp_proj(
   homoskedasticity = FALSE,
   kernel = "Powell",
   residuals = NULL,
+  solver = c("gurobi", "highs"),
   O_neg = NULL,
   O_pos = NULL,
   M = NULL,
@@ -77,32 +78,8 @@ defaults to FALSE (boolean)}
 \item{residuals}{Residuals from IQR MILP program; if NULL (default), use
 naive residuals from quantile regression}
 
-\item{O_neg, O_pos}{Indices for residuals whose sign is fixed to be negative
-and positive, respectively (vectors)}
-
-\item{M}{A large number that bounds the absolute value of the residuals
-(a positive number); defaults to 2 times the largest absolute residual from
-quantile regression of Y on X and D}
-
-\item{TimeLimit}{Maximum time (in seconds) spent on a linear program;
-defaults to 300, will be appended to \code{params}}
-
-\item{params}{Gurobi parameters, see
-\url{https://www.gurobi.com/documentation/9.1/refman/parameter_descriptions.html}}
-
-\item{sparse}{If TRUE (default), use sparse matrices}
-
-\item{quietly}{If TRUE (default), supress messages during execution (boolean)}
-
-\item{show_progress}{If TRUE (default), sends progress messages during
-execution (boolean)}
-
-\item{LogFileName}{Name of Gurobi log file; If string is empty (default),
-Gurobi log won't be saved (string)}
-
-\item{LogFileExt}{Extension of Gurobi log file; If \code{LogFileName} is
-empty, then Gurobi log won't be saved and this argument will be ignored;
-defaults to "log" (string)}
+\item{solver}{Choice of solver: "gurobi" (default) or "highs" (Note: HiGHS does
+not support MIQCP and will throw an error if selected here)}
 }
 \value{
 A named list of # TODO: update

@@ -36,7 +36,7 @@
 ### Algorithm A: proposing active basis and obtaining candidate solutions as a by-product
 ###   1. propose active basis according to some proposal distribution
 ###   2. compute solution to QR problem using semi-closed form expression
-###   3. determine probability `phi`; this is the almost the limit distribution of the IQR estimator 
+###   3. determine probability `phi`; this is the almost the limit distribution of the IQR estimator
 ###   4. use proposal distribution and `phi` to determine acceptance probability;
 ###      remember to correct for the frequency of proposal
 ###   5. accept or reject the QR solution to come up with candidate solutions in Step 1. of the birds-eye-view

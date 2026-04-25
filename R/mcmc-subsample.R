@@ -25,7 +25,7 @@ foc_violation <- function(
   right <- xi_vec - (1 - tau)
   violation <- pmax(left, right, rep(0, length(h))) # p by 1
   list(
-    dist = sum(abs(violation) ^ params$l_norm) ^ (1 / params$l_norm),
+    dist = sum(abs(violation)^params$l_norm)^(1 / params$l_norm),
     xi_vec = xi_vec
   )
 }
@@ -97,7 +97,10 @@ exp_dist_correction <- function(distance, params) {
 #' @param save_subsamples If TRUE, save subsamples in a list
 rwalk_subsample <- function(
   h,
-  Y, X, D, Phi,
+  Y,
+  X,
+  D,
+  Phi,
   tau,
   initial_subsample, # rounded version of continuous center to FOC
   iterations,
@@ -122,14 +125,20 @@ rwalk_subsample <- function(
     reference_subsample <- as.integer(reference_subsample)
   }
 
-  if (profile_bool) time <- list()
+  if (profile_bool) {
+    time <- list()
+  }
 
   # Subsamples -----------------------------------------------------------------
 
-  if (profile_bool) overall_start_time <- Sys.time()
+  if (profile_bool) {
+    overall_start_time <- Sys.time()
+  }
 
   # preliminaries
-  if (profile_bool) start_time <- Sys.time()
+  if (profile_bool) {
+    start_time <- Sys.time()
+  }
   xi_mat <- compute_foc_conditions(
     h,
     Y = Y,
@@ -138,9 +147,12 @@ rwalk_subsample <- function(
     Phi = Phi,
     tau = tau
   )
-  if (profile_bool) time$xi_mat <- difftime(Sys.time(), start_time,
-                                            units = "secs")
-  if (profile_bool) start_time <- Sys.time()
+  if (profile_bool) {
+    time$xi_mat <- difftime(Sys.time(), start_time, units = "secs")
+  }
+  if (profile_bool) {
+    start_time <- Sys.time()
+  }
   if (!is.null(h_alt)) {
     xi_mat_alt <- compute_foc_conditions(
       h_alt,
@@ -151,11 +163,14 @@ rwalk_subsample <- function(
       tau = tau
     )
   }
-  if (profile_bool) time$xi_mat_alt <- difftime(Sys.time(), start_time,
-                                                units = "secs")
+  if (profile_bool) {
+    time$xi_mat_alt <- difftime(Sys.time(), start_time, units = "secs")
+  }
 
   # Initialize MCMC
-  if (profile_bool) start_time <- Sys.time()
+  if (profile_bool) {
+    start_time <- Sys.time()
+  }
   D_current <- initial_subsample
   # ensure subsample includes active basis (useful if `initial_subsample` was
   # obtained with `foc_center` where `h` was NULL)
@@ -174,9 +189,11 @@ rwalk_subsample <- function(
   xi_vec_current <- dist_current_info$xi_vec
   # log_P_current <- log(transform_function(dist_current, transform_params)$result) #nolint
   log_P_current <- -Inf # this will ensure we move in the first step # Q: is this okay?
-  current_transformation <- list(result = NA,
-                                 mult_correction = NA,
-                                 dist_transform = NA)
+  current_transformation <- list(
+    result = NA,
+    mult_correction = NA,
+    dist_transform = NA
+  )
   if (identical(distance_function, foc_violation)) {
     foc_violation_dist <- dist_current
     membership_current <- isTRUE(all.equal(foc_violation_dist, 0))
@@ -191,10 +208,13 @@ rwalk_subsample <- function(
     membership_current <- isTRUE(all.equal(foc_violation_dist, 0))
   }
 
-  if (profile_bool) time$initialization <- difftime(Sys.time(), start_time,
-                                                    units = "secs")
+  if (profile_bool) {
+    time$initialization <- difftime(Sys.time(), start_time, units = "secs")
+  }
 
-  if (profile_bool) start_time <- Sys.time()
+  if (profile_bool) {
+    start_time <- Sys.time()
+  }
   if (!is.null(h_alt)) {
     dist_alt_current <- distance_function(
       h = h_alt,
@@ -204,25 +224,32 @@ rwalk_subsample <- function(
       params = distance_params,
       reference_subsample = reference_subsample
     )$dist
-    P_alt_current <- transform_function(dist_alt_current, transform_params)$result
+    P_alt_current <- transform_function(
+      dist_alt_current,
+      transform_params
+    )$result
     if (identical(distance_function, foc_violation)) {
       membership_alt_current <- isTRUE(all.equal(dist_alt_current, 0))
     } else {
-      membership_alt_current <- isTRUE(all.equal(foc_violation(
-        h = h_alt,
-        subsample = D_current,
-        tau = tau,
-        xi_mat = xi_mat_alt,
-        params = distance_params
-      )$dist, 0))
+      membership_alt_current <- isTRUE(all.equal(
+        foc_violation(
+          h = h_alt,
+          subsample = D_current,
+          tau = tau,
+          xi_mat = xi_mat_alt,
+          params = distance_params
+        )$dist,
+        0
+      ))
     }
   } else {
     dist_alt_current <- NA
     P_alt_current <- NA
     membership_alt_current <- NA
   }
-  if (profile_bool) time$initialization_alt <- difftime(Sys.time(), start_time,
-                                                        units = "secs")
+  if (profile_bool) {
+    time$initialization_alt <- difftime(Sys.time(), start_time, units = "secs")
+  }
 
   n <- length(initial_subsample)
   m <- sum(initial_subsample)
@@ -251,13 +278,17 @@ rwalk_subsample <- function(
   ones_reference <- setdiff(which(reference_subsample == 1), h)
   zeros_reference <- setdiff(which(reference_subsample == 0), h)
 
-  if (profile_bool) time$iterations <- vector("list", iterations)
+  if (profile_bool) {
+    time$iterations <- vector("list", iterations)
+  }
 
   for (mcmc_idx in seq_len(iterations)) {
     record <- 0
     log_u <- log(u_vec[[mcmc_idx]])
 
-    if (label_bool && mcmc_idx %% label_skip == 0) label_function(mcmc_idx)
+    if (label_bool && mcmc_idx %% label_skip == 0) {
+      label_function(mcmc_idx)
+    }
 
     ones_current <- setdiff(which(D_current == 1), h)
     zeros_current <- setdiff(which(D_current == 0), h)
@@ -267,10 +298,22 @@ rwalk_subsample <- function(
       common_zeros <- intersect(zeros_reference, zeros_current) #nolint
       different_ones <- intersect(zeros_reference, ones_current) #nolint
       different_zeros <- intersect(ones_reference, zeros_current) #nolint
-      stopifnot(length(common_ones) + length(common_zeros) + length(different_ones) + length(different_zeros) + length(h) == n)
-      sharing <- length(intersect(which(reference_subsample == 1), which(D_current == 1))) #nolint
+      stopifnot(
+        length(common_ones) +
+          length(common_zeros) +
+          length(different_ones) +
+          length(different_zeros) +
+          length(h) ==
+          n
+      )
+      sharing <- length(intersect(
+        which(reference_subsample == 1),
+        which(D_current == 1)
+      )) #nolint
       stopifnot(sharing >= p) # we must always share active basis indices
-      stopifnot(all(h %in% intersect(which(reference_subsample == 1), which(D_current == 1)))) # we must always share active basis indices #nolint
+      stopifnot(all(
+        h %in% intersect(which(reference_subsample == 1), which(D_current == 1))
+      )) # we must always share active basis indices #nolint
       type_vec <- c()
       weight_vec <- c()
       num_closer <- (m - sharing)^2
@@ -290,14 +333,18 @@ rwalk_subsample <- function(
       }
     }
 
-    if (profile_bool) while_start_time <- Sys.time()
+    if (profile_bool) {
+      while_start_time <- Sys.time()
+    }
 
     while_counter <- 0
     while_bool <- TRUE
     while (while_bool) {
       while_counter <- while_counter + 1
 
-      if (profile_bool) start_time <- Sys.time()
+      if (profile_bool) {
+        start_time <- Sys.time()
+      }
       # Get proposals
       if (!is.null(reference_subsample)) {
         type <- alt_sample(type_vec, 1, prob = weight_vec)
@@ -314,7 +361,11 @@ rwalk_subsample <- function(
           log_Q_current <- -log((m - (sharing - 1))^2)
         } else if (type == "same") {
           one_to_zero <- alt_sample(ones_current, 1)
-          zero_to_one <- ifelse(one_to_zero %in% common_ones, alt_sample(different_zeros, 1), alt_sample(common_zeros, 1)) #nolint
+          zero_to_one <- ifelse(
+            one_to_zero %in% common_ones,
+            alt_sample(different_zeros, 1),
+            alt_sample(common_zeros, 1)
+          ) #nolint
           log_Q_star <- -log(num_same)
           log_Q_current <- -log(num_same)
         }
@@ -335,12 +386,16 @@ rwalk_subsample <- function(
       stopifnot(sum(D_star) == m)
       stopifnot(sum(D_current != D_star) == 2) # ensure D_star is one-step neighbor
       if (profile_bool) {
-        time$iterations[[mcmc_idx]]$get_D_star <- difftime(Sys.time(),
-                                                           start_time,
-                                                           units = "secs")
+        time$iterations[[mcmc_idx]]$get_D_star <- difftime(
+          Sys.time(),
+          start_time,
+          units = "secs"
+        )
       }
 
-      if (profile_bool) start_time <- Sys.time()
+      if (profile_bool) {
+        start_time <- Sys.time()
+      }
       # Compute P_star
       dist_star_info <- distance_function(
         h = h,
@@ -359,23 +414,29 @@ rwalk_subsample <- function(
       star_transformation <- transform_function(dist_star, transform_params)
       log_P_star <- log(star_transformation$result)
       if (profile_bool) {
-        time$iterations[[mcmc_idx]]$compute_dist_star <- difftime(Sys.time(),
-                                                                  start_time,
-                                                                  units = "secs") #nolint
+        time$iterations[[mcmc_idx]]$compute_dist_star <- difftime(
+          Sys.time(),
+          start_time,
+          units = "secs"
+        ) #nolint
       }
       # go to next iteration of while loop if log_P_star is infinite
       if (is.infinite(log_P_star)) {
         next
       }
 
-      if (profile_bool) start_time <- Sys.time()
+      if (profile_bool) {
+        start_time <- Sys.time()
+      }
       # Compute acceptance probabilities and accept/reject
       log_acc_prob <- log_P_star - log_P_current + log_Q_current - log_Q_star
       accept_reject_bool <- log_u < log_acc_prob
       if (profile_bool) {
-        time$iterations[[mcmc_idx]]$compute_acc_prob <- difftime(Sys.time(),
-                                                                 start_time,
-                                                                 units = "secs")
+        time$iterations[[mcmc_idx]]$compute_acc_prob <- difftime(
+          Sys.time(),
+          start_time,
+          units = "secs"
+        )
       }
 
       # exit while loop if there are no numerical issues
@@ -385,9 +446,11 @@ rwalk_subsample <- function(
     } # exit while loop
 
     if (profile_bool) {
-      time$iterations[[mcmc_idx]]$while_loop <- difftime(Sys.time(),
-                                                         while_start_time,
-                                                         units = "secs")
+      time$iterations[[mcmc_idx]]$while_loop <- difftime(
+        Sys.time(),
+        while_start_time,
+        units = "secs"
+      )
       time$iterations[[mcmc_idx]]$while_counter <- while_counter
     }
 
@@ -421,18 +484,23 @@ rwalk_subsample <- function(
           params = distance_params,
           reference_subsample = reference_subsample
         )$dist
-        P_alt_current <- transform_function(dist_alt_current,
-                                            transform_params)$result
+        P_alt_current <- transform_function(
+          dist_alt_current,
+          transform_params
+        )$result
         if (identical(distance_function, foc_violation)) {
           membership_alt_current <- isTRUE(all.equal(dist_alt_current, 0))
         } else {
-          membership_alt_current <- isTRUE(all.equal(foc_violation(
-            h = h_alt,
-            subsample = D_current,
-            tau = tau,
-            xi_mat = xi_mat_alt,
-            params = distance_params
-          )$dist, 0))
+          membership_alt_current <- isTRUE(all.equal(
+            foc_violation(
+              h = h_alt,
+              subsample = D_current,
+              tau = tau,
+              xi_mat = xi_mat_alt,
+              params = distance_params
+            )$dist,
+            0
+          ))
         }
       }
     }
@@ -453,12 +521,17 @@ rwalk_subsample <- function(
     }
   } # exit for loop
 
-  if (profile_bool) time$overall <- difftime(Sys.time(), overall_start_time,
-                                             units = "secs")
+  if (profile_bool) {
+    time$overall <- difftime(Sys.time(), overall_start_time, units = "secs")
+  }
 
-  if (!profile_bool) time <- NA
+  if (!profile_bool) {
+    time <- NA
+  }
 
-  if (!save_subsamples) result_D <- NA
+  if (!save_subsamples) {
+    result_D <- NA
+  }
 
   list(
     record = result_record,

@@ -74,7 +74,9 @@ send_note_if <- function(note, condition, fcn, ...) {
 #' @family dev
 collect_note_if <- function(msg_list, new_msg, condition, newline = TRUE) {
   if (condition) {
-    if (newline) new_msg <- paste0("\n", new_msg)
+    if (newline) {
+      new_msg <- paste0("\n", new_msg)
+    }
     msg_list[[length(msg_list) + 1]] <- new_msg
   }
   msg_list
@@ -109,13 +111,15 @@ collect_note_if <- function(msg_list, new_msg, condition, newline = TRUE) {
 #'    \item pp_k: preprocessing, k
 #'    \item pp_l: preprocessing, l
 #'  }
-decompose_A <- function(Y,
-                        X,
-                        D,
-                        Z,
-                        O_neg = NULL,
-                        O_pos = NULL,
-                        Phi = linear_projection(D, X, Z)) {
+decompose_A <- function(
+  Y,
+  X,
+  D,
+  Z,
+  O_neg = NULL,
+  O_pos = NULL,
+  Phi = linear_projection(D, X, Z)
+) {
   # Get dimensions of data
   n <- length(Y)
   n_D <- nrow(D)
@@ -147,7 +151,7 @@ decompose_A <- function(Y,
   # Preprocessing
   O_neg <- sort(O_neg)
   O_pos <- sort(O_pos)
-  O <- c(O_neg, O_pos)        # indices of fixed residuals
+  O <- c(O_neg, O_pos) # indices of fixed residuals
   if (!is.null(O)) {
     pp_a <- rep("pp_a", n)
     pp_k <- rep("pp_k", n)
@@ -159,7 +163,6 @@ decompose_A <- function(Y,
   }
 
   c(pf, df_X, df_Phi, cs_uk, cs_vl, cs_ak, cs_al, pp_a, pp_k, pp_l)
-
 }
 
 ### write_prm ---------------------------
@@ -216,13 +219,15 @@ write_prm <- function(params, path, filename) {
 #' @return A CSV called "merged.csv" in \code{dir} directory
 #'
 #' @export
-concatenate_csvs <- function(dir,
-                             cols,
-                             pattern = NULL,
-                             merged_name = "merged.csv",
-                             read = utils::read.csv,
-                             ...,
-                             remove_after_merge = FALSE) {
+concatenate_csvs <- function(
+  dir,
+  cols,
+  pattern = NULL,
+  merged_name = "merged.csv",
+  read = utils::read.csv,
+  ...,
+  remove_after_merge = FALSE
+) {
   filenames <- list.files(dir, full.names = TRUE, pattern = pattern)
   csv_list <- lapply(
     filenames,
@@ -236,7 +241,9 @@ concatenate_csvs <- function(dir,
   }
   utils::write.csv(merged, paste0(dir, "/", merged_name))
   if (remove_after_merge) {
-    lapply(filenames, function(files) { file.remove(files) })
+    lapply(filenames, function(files) {
+      file.remove(files)
+    })
     message(paste0("Files in ", dir, " are removed"))
   }
 }

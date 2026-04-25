@@ -32,16 +32,20 @@ foc_membership <- function(
   D_subsample,
   Phi_subsample,
   tau,
-  beta_D = h_to_beta(h,
-                     Y = Y_subsample,
-                     X = X_subsample,
-                     D = D_subsample,
-                     Phi = Phi_subsample)$beta_D,
-  beta_X = h_to_beta(h,
-                     Y = Y_subsample,
-                     X = X_subsample,
-                     D = D_subsample,
-                     Phi = Phi_subsample)$beta_X
+  beta_D = h_to_beta(
+    h,
+    Y = Y_subsample,
+    X = X_subsample,
+    D = D_subsample,
+    Phi = Phi_subsample
+  )$beta_D,
+  beta_X = h_to_beta(
+    h,
+    Y = Y_subsample,
+    X = X_subsample,
+    D = D_subsample,
+    Phi = Phi_subsample
+  )$beta_X
 ) {
   # TODO: the indices of h need to be written in terms of the subsample.
   # e.g.:
@@ -153,16 +157,21 @@ foc_membership_v2 <- function(
   D_subsample,
   Phi_subsample,
   tau,
-  beta_D = h_to_beta(h,
-                     Y = Y_subsample,
-                     X = X_subsample,
-                     D = D_subsample,
-                     Phi = Phi_subsample)$beta_D,
+  beta_D = h_to_beta(
+    h,
+    Y = Y_subsample,
+    X = X_subsample,
+    D = D_subsample,
+    Phi = Phi_subsample
+  )$beta_D,
   tolerance = 1e-9
 ) {
   # run a regression of Y_tilde ~ X and Phi using just the subsample
   Y_tilde_subsample <- Y_subsample - D_subsample %*% beta_D
-  qr <- quantreg::rq(Y_tilde_subsample ~ Phi_subsample + X_subsample - 1, tau = tau)
+  qr <- quantreg::rq(
+    Y_tilde_subsample ~ Phi_subsample + X_subsample - 1,
+    tau = tau
+  )
   beta_Phi <- coef(qr)[seq_len(ncol(Phi))]
   beta_Phi_norm <- sum(abs(beta_Phi))
   # check if L1 norm of the beta_Phi's are less than some tolerance
@@ -185,7 +194,6 @@ foc_membership_v3 <- function(
   Phi_subsample,
   tau
 ) {
-
   m <- nrow(Y_subsample)
   p <- ncol(X_subsample) + ncol(Phi_subsample) # we concentrate out D_subsample
   stopifnot(length(h) == p)
@@ -201,11 +209,18 @@ foc_membership_v3 <- function(
   stopifnot(ncol(bh) == 1)
 
   # compute resid_subsample
-  beta <- h_to_beta(h, Y = Y_subsample, X = X_subsample, D = D_subsample, Phi =
-                    Phi_subsample)
+  beta <- h_to_beta(
+    h,
+    Y = Y_subsample,
+    X = X_subsample,
+    D = D_subsample,
+    Phi = Phi_subsample
+  )
   beta_D <- beta$beta_D
   beta_X <- beta$beta_X
-  resid_subsample <- Y_subsample - D_subsample %*% beta_D - X_subsample %*% beta_X
+  resid_subsample <- Y_subsample -
+    D_subsample %*% beta_D -
+    X_subsample %*% beta_X
 
   # create indices that are not in h
   noth <- setdiff(seq_len(m), h)

@@ -61,12 +61,14 @@ proposal_h <- function(weights, h) {
 #' @param num_draws Number of draws from proposal distribution of active basis
 #'
 #' @return indices in the active basis
-draw_proposal_h <- function(weights,
-                            p,
-                            num_draws,
-                            label_bool = FALSE,
-                            label_skip = 5,
-                            existing_h = c()) {
+draw_proposal_h <- function(
+  weights,
+  p,
+  num_draws,
+  label_bool = FALSE,
+  label_skip = 5,
+  existing_h = c()
+) {
   # Choose `p` balls from `n` urns, where `n := length(residuals)`.
   # We are more likely to pick balls from urns with larger entries in `weights`.
   # It's possible to pick two balls from the same bin.
@@ -84,9 +86,14 @@ draw_proposal_h <- function(weights,
     existing_h <- rbind(existing_h, draws_h)
   }
   if (num_draws_remaining > 0) {
-    draw_proposal_h(weights, p, num_draws_remaining,
-                    label_bool, label_skip,
-                    existing_h)
+    draw_proposal_h(
+      weights,
+      p,
+      num_draws_remaining,
+      label_bool,
+      label_skip,
+      existing_h
+    )
   } else {
     return(existing_h)
   }
@@ -157,7 +164,10 @@ mcmc_h <- function(
   residuals_opt,
   theta,
   varcov_mat,
-  Y, X, D, Phi,
+  Y,
+  X,
+  D,
+  Phi,
   discard_burnin,
   manual_burnin = 1,
   unique_beta_quota = rep(0, ncol(D)),
@@ -242,7 +252,9 @@ mcmc_h <- function(
     max_beta <- vector("double", ncol(D))
     min_beta <- vector("double", ncol(D))
     for (beta_D_index in seq_len(ncol(D))) {
-      beta <- sapply(result_beta, function(i) { i[[beta_D_index]] })
+      beta <- sapply(result_beta, function(i) {
+        i[[beta_D_index]]
+      })
       n_beta <- length(unique(beta))
       remaining <- unique_beta_quota[[beta_D_index]] - n_beta
       max_beta[[beta_D_index]] <- max(beta)

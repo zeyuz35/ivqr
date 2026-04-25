@@ -3,10 +3,16 @@ library(dplyr)
 library(quantreg)
 
 test_that("Autor", {
-
   # filter to black females
-  full_data <- as.data.frame(cbind(Y_educ, X_educ, D_educ, Z_educ,
-                             EducFE_educ, DInt_educ, ZInt_educ)) %>%
+  full_data <- as.data.frame(cbind(
+    Y_educ,
+    X_educ,
+    D_educ,
+    Z_educ,
+    EducFE_educ,
+    DInt_educ,
+    ZInt_educ
+  )) %>%
     filter(female > 0) %>%
     filter(wh_race < 0) %>%
     filter(oth_race < 0)
@@ -14,12 +20,16 @@ test_that("Autor", {
   # create data
   y_mat <- as.matrix(full_data[, y_name])
   colnames(y_mat) <- y_name
-  covs_remove <- grepl("Idistyr|yq|wageadjh1_8|qtremph1_8|race|female",
-                       covs_name)
+  covs_remove <- grepl(
+    "Idistyr|yq|wageadjh1_8|qtremph1_8|race|female",
+    covs_name
+  )
   covs_keep <- covs_name[!covs_remove]
-  x_mat <- cbind(ones = rep(1, nrow(full_data)),
-                 as.matrix(full_data[, educfe_name]),
-                 as.matrix(full_data[, covs_keep]))
+  x_mat <- cbind(
+    ones = rep(1, nrow(full_data)),
+    as.matrix(full_data[, educfe_name]),
+    as.matrix(full_data[, covs_keep])
+  )
   z_mat <- as.matrix(full_data[, c(z_name, zint_name)])
   d_mat <- as.matrix(full_data[, c(d_name, dint_name)])
   phi_mat <- linear_projection(d_mat, x_mat, z_mat)
@@ -80,11 +90,9 @@ test_that("Autor", {
     tau = tau
   )
   expect_false(result)
-
 })
 
 test_that("Chen-Lee", {
-
   # create data
   n <- 10000
   sim <- chen_lee(n = n)

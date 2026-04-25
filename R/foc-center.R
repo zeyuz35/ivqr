@@ -39,7 +39,10 @@ foc_center <- function(
   beta_D = NULL,
   beta_X = NULL,
   subsample_size,
-  Y, X, D, Phi,
+  Y,
+  X,
+  D,
+  Phi,
   tau,
   params = list(OutputFlag = 0)
 ) {
@@ -50,8 +53,16 @@ foc_center <- function(
     stop("`facet_center` denominator must be positive; we need n - p - 1 > 0.")
   }
 
-  tmp <- compute_foc_conditions(h, beta_D, beta_X,
-                                Y = Y, X = X, D = D, Phi = Phi, tau = tau)
+  tmp <- compute_foc_conditions(
+    h,
+    beta_D,
+    beta_X,
+    Y = Y,
+    X = X,
+    D = D,
+    Phi = Phi,
+    tau = tau
+  )
   xi_mat <- tmp[, setdiff(seq_len(n), h), drop = FALSE]
 
   # Decision variables in order from left/top to right/bottom
@@ -83,9 +94,13 @@ foc_center <- function(
   model$vtype <- rep("C", num$decision_vars)
 
   # Constraint 1: sum of omega is m-p (*_omega)
-  A_omega <- matrix(c(
-    rep(1, num$omega), rep(0, num$decision_vars - num$omega)
-  ), nrow = 1)
+  A_omega <- matrix(
+    c(
+      rep(1, num$omega),
+      rep(0, num$decision_vars - num$omega)
+    ),
+    nrow = 1
+  )
   sense_omega <- "="
   rhs_omega <- subsample_size - p
 
@@ -98,8 +113,11 @@ foc_center <- function(
   A_left <- do.call(cbind, list(-1 * xi_mat, zeros, ones))
   A_foc <- rbind(A_right, A_left)
   A_foc <- expand_matrix(
-    A_foc, newrow = 2 * p, newcol = num$decision_vars,
-    row_direction = "bottom", col_direction = "right"
+    A_foc,
+    newrow = 2 * p,
+    newcol = num$decision_vars,
+    row_direction = "bottom",
+    col_direction = "right"
   )
   sense_foc <- rep("=", 2 * p)
   rhs_foc <- c(rep(1 - tau, p), rep(tau, p))

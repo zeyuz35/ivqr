@@ -3,15 +3,24 @@ extract_subsample_in_foc <- function(
   beta_D,
   beta_X,
   subsample_size,
-  Y, X, D, Phi,
+  Y,
+  X,
+  D,
+  Phi,
   tau,
   gurobi_params = list(OutputFlag = 0, IntFeasTol = 1e-8, FeasibilityTol = 1e-8)
 ) {
   n <- nrow(Y)
   p <- length(h)
   tmp <- compute_foc_conditions(
-    h, beta_D, beta_X,
-    Y = Y, X = X, D = D, Phi = Phi, tau = tau
+    h,
+    beta_D,
+    beta_X,
+    Y = Y,
+    X = X,
+    D = D,
+    Phi = Phi,
+    tau = tau
   )
   xi_mat <- tmp[, setdiff(seq_len(n), h), drop = FALSE]
 

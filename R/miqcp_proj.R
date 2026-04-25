@@ -54,6 +54,8 @@
 #'  \code{homoskedasticity} is FALSE
 #' @param residuals Residuals from IQR MILP program; if NULL (default), use
 #'  naive residuals from quantile regression
+#' @param solver Choice of solver: "gurobi" (default) or "highs" (Note: HiGHS does
+#'  not support MIQCP and will throw an error if selected here)
 #' @inheritParams iqr_milp
 #'
 #' @importFrom methods as
@@ -82,34 +84,41 @@
 #'  }
 #'
 #' @export
-miqcp_proj <- function(projection_index,
-                       endogeneous = TRUE,
-                       beta_X_indices = NULL,
-                       alpha = 0.1,
-                       sense,
-                       Y,
-                       X,
-                       D,
-                       Z,
-                       Phi = linear_projection(D, X, Z),
-                       tau,
-                       orthogonalize_statistic = FALSE,
-                       homoskedasticity = FALSE,
-                       kernel = "Powell",
-                       residuals = NULL,
-                       O_neg = NULL,
-                       O_pos = NULL,
-                       M = NULL,
-                       TimeLimit = 300,
-                       params = list(FeasibilityTol = 1e-6,
-                                     OutputFlag = 0),
-                       sparse = TRUE,
-                       quietly = TRUE,
-                       show_progress = TRUE,
-                       LogFileName = "",
-                       LogFileExt = ".log") {
-
+miqcp_proj <- function(
+  projection_index,
+  endogeneous = TRUE,
+  beta_X_indices = NULL,
+  alpha = 0.1,
+  sense,
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  orthogonalize_statistic = FALSE,
+  homoskedasticity = FALSE,
+  kernel = "Powell",
+  residuals = NULL,
+  solver = c("gurobi", "highs"),
+  O_neg = NULL,
+  O_pos = NULL,
+  M = NULL,
+  TimeLimit = 300,
+  params = list(FeasibilityTol = 1e-6, OutputFlag = 0),
+  sparse = TRUE,
+  quietly = TRUE,
+  show_progress = TRUE,
+  LogFileName = "",
+  LogFileExt = ".log"
+) {
   out <- list() # Initialize list of results to return
+  solver <- match.arg(solver)
+  if (solver == "highs") {
+    stop(
+      "HiGHS solver does not support quadratic constraints (MIQCP). Please use 'gurobi'."
+    )
+  }
 
   # Check that alpha is between 0 and 1 (exclusive)
   msg <- "`alpha` must be between 0 and 1."
@@ -118,8 +127,10 @@ miqcp_proj <- function(projection_index,
   # Check that kernel is appropriate
   kernel <- tolower(kernel)
   if (kernel != "powell" & kernel != "gaussian" & !homoskedasticity) {
-    stop(paste0("`kernel` should either be 'Powell' or 'Gaussian', not ",
-                kernel))
+    stop(paste0(
+      "`kernel` should either be 'Powell' or 'Gaussian', not ",
+      kernel
+    ))
   }
 
   # Get dimensions of data
@@ -229,23 +240,27 @@ miqcp_proj <- function(projection_index,
   } else {
     beta_X_obj[projection_index] <- 1
   }
-  obj <- c(beta_X_obj,    # beta_X
-           beta_D_obj,    # beta_D
-           rep(0, n),     # u
-           rep(0, n),     # v
-           rep(0, n),     # a
-           rep(0, n),     # k
-           rep(0, n))     # l
+  obj <- c(
+    beta_X_obj, # beta_X
+    beta_D_obj, # beta_D
+    rep(0, n), # u
+    rep(0, n), # v
+    rep(0, n), # a
+    rep(0, n), # k
+    rep(0, n)
+  ) # l
   stopifnot(length(obj) == num_decision_vars)
 
   # Primal Feasibility Constraint (25)
-  A_pf <- cbind(X,                  # beta_X
-                D,                  # beta_D
-                diag(1, nrow = n),  # u
-                -diag(1, nrow = n), # v
-                diag(0, nrow = n),  # a
-                diag(0, nrow = n),  # k
-                diag(0, nrow = n))  # l
+  A_pf <- cbind(
+    X, # beta_X
+    D, # beta_D
+    diag(1, nrow = n), # u
+    -diag(1, nrow = n), # v
+    diag(0, nrow = n), # a
+    diag(0, nrow = n), # k
+    diag(0, nrow = n)
+  ) # l
   b_pf <- Y
   sense_pf <- rep("=", n)
 
@@ -257,13 +272,15 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Dual Feasibility Constraint (26)
-  A_df_X <- cbind(matrix(0, nrow = p_X - cardinality_K, ncol = p_X),  # beta_X
-                  matrix(0, nrow = p_X - cardinality_K, ncol = p_D),  # beta_D
-                  matrix(0, nrow = p_X - cardinality_K, ncol = n),    # u
-                  matrix(0, nrow = p_X - cardinality_K, ncol = n),    # v
-                  t(X_K_minus),                                       # a
-                  matrix(0, nrow = p_X - cardinality_K, ncol = n),    # k
-                  matrix(0, nrow = p_X - cardinality_K, ncol = n))    # l
+  A_df_X <- cbind(
+    matrix(0, nrow = p_X - cardinality_K, ncol = p_X), # beta_X
+    matrix(0, nrow = p_X - cardinality_K, ncol = p_D), # beta_D
+    matrix(0, nrow = p_X - cardinality_K, ncol = n), # u
+    matrix(0, nrow = p_X - cardinality_K, ncol = n), # v
+    t(X_K_minus), # a
+    matrix(0, nrow = p_X - cardinality_K, ncol = n), # k
+    matrix(0, nrow = p_X - cardinality_K, ncol = n)
+  ) # l
   b_df_X <- (1 - tau) * t(X) %*% ones
   sense_df_X <- rep("=", p_X)
 
@@ -275,13 +292,15 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Complementary Slackness (28)
-  A_cs_uk <- cbind(matrix(0, nrow = n, ncol = p_X),       # beta_X
-                   matrix(0, nrow = n, ncol = p_D),       # beta_D
-                   diag(1, nrow = n, ncol = n),           # u
-                   matrix(0, nrow = n, ncol = n),         # v
-                   matrix(0, nrow = n, ncol = n),         # a
-                   -M * diag(1, nrow = n, ncol = n),      # k
-                   matrix(0, nrow = n, ncol = n))         # l
+  A_cs_uk <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    diag(1, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    matrix(0, nrow = n, ncol = n), # a
+    -M * diag(1, nrow = n, ncol = n), # k
+    matrix(0, nrow = n, ncol = n)
+  ) # l
   b_cs_uk <- rep(0, n)
   sense_cs_uk <- rep("<=", n)
 
@@ -292,13 +311,15 @@ miqcp_proj <- function(projection_index,
   msg <- paste("Complementary Slackness for u and k Complete.")
   send_note_if(msg, show_progress, message)
 
-  A_cs_vl <- cbind(matrix(0, nrow = n, ncol = p_X),       # beta_X
-                   matrix(0, nrow = n, ncol = p_D),       # beta_D
-                   matrix(0, nrow = n, ncol = n),         # u
-                   diag(1, nrow = n, ncol = n),           # v
-                   matrix(0, nrow = n, ncol = n),         # a
-                   matrix(0, nrow = n, ncol = n),         # k
-                   -M * diag(1, nrow = n, ncol = n))      # l
+  A_cs_vl <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    diag(1, nrow = n, ncol = n), # v
+    matrix(0, nrow = n, ncol = n), # a
+    matrix(0, nrow = n, ncol = n), # k
+    -M * diag(1, nrow = n, ncol = n)
+  ) # l
   b_cs_vl <- rep(0, n)
   sense_cs_vl <- rep("<=", n)
 
@@ -310,13 +331,15 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Complementary Slackness (29)
-  A_cs_ak <- cbind(matrix(0, nrow = n, ncol = p_X),     # beta_X
-                   matrix(0, nrow = n, ncol = p_D),     # beta_D
-                   matrix(0, nrow = n, ncol = n),       # u
-                   matrix(0, nrow = n, ncol = n),       # v
-                   diag(1, nrow = n, ncol = n),         # a
-                   -diag(1, nrow = n, ncol = n),        # k
-                   matrix(0, nrow = n, ncol = n))       # l
+  A_cs_ak <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    diag(1, nrow = n, ncol = n), # a
+    -diag(1, nrow = n, ncol = n), # k
+    matrix(0, nrow = n, ncol = n)
+  ) # l
   b_cs_ak <- rep(0, n)
   sense_cs_ak <- rep(">=", n)
 
@@ -327,13 +350,15 @@ miqcp_proj <- function(projection_index,
   msg <- paste("Complementary Slackness for a and k Complete.")
   send_note_if(msg, show_progress, message)
 
-  A_cs_al <- cbind(matrix(0, nrow = n, ncol = p_X),   # beta_X
-                   matrix(0, nrow = n, ncol = p_D),   # beta_D
-                   matrix(0, nrow = n, ncol = n),     # u
-                   matrix(0, nrow = n, ncol = n),     # v
-                   diag(1, nrow = n, ncol = n),       # a
-                   matrix(0, nrow = n, ncol = n),     # k
-                   diag(1, nrow = n, ncol = n))       # l
+  A_cs_al <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    diag(1, nrow = n, ncol = n), # a
+    matrix(0, nrow = n, ncol = n), # k
+    diag(1, nrow = n, ncol = n)
+  ) # l
   b_cs_al <- rep(1, n)
   sense_cs_al <- rep("<=", n)
 
@@ -345,20 +370,24 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Non-negativity and Boundedness Constraints (30) and (31)
-  lb <- c(rep(-Inf, p_X), # beta_X
-          rep(-Inf, p_D), # beta_D
-          rep(0, n),      # u
-          rep(0, n),      # v
-          rep(0, n),      # a
-          rep(0, n),      # k
-          rep(0, n))      # l
-  ub <- c(rep(Inf, p_X),  # beta_X
-          rep(Inf, p_D),  # beta_D
-          rep(Inf, n),    # u
-          rep(Inf, n),    # v
-          rep(1, n),      # a
-          rep(1, n),      # k
-          rep(1, n))      # l
+  lb <- c(
+    rep(-Inf, p_X), # beta_X
+    rep(-Inf, p_D), # beta_D
+    rep(0, n), # u
+    rep(0, n), # v
+    rep(0, n), # a
+    rep(0, n), # k
+    rep(0, n)
+  ) # l
+  ub <- c(
+    rep(Inf, p_X), # beta_X
+    rep(Inf, p_D), # beta_D
+    rep(Inf, n), # u
+    rep(Inf, n), # v
+    rep(1, n), # a
+    rep(1, n), # k
+    rep(1, n)
+  ) # l
 
   stopifnot(length(lb) == num_decision_vars)
   stopifnot(length(ub) == num_decision_vars)
@@ -366,13 +395,15 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Integrality Constraint (see vtype) (18)
-  vtype <- c(rep("C", p_X), # beta_X
-             rep("C", p_D), # beta_D
-             rep("C", n),   # u
-             rep("C", n),   # v
-             rep("C", n),   # a
-             rep("B", n),   # k
-             rep("B", n))   # l
+  vtype <- c(
+    rep("C", p_X), # beta_X
+    rep("C", p_D), # beta_D
+    rep("C", n), # u
+    rep("C", n), # v
+    rep("C", n), # a
+    rep("B", n), # k
+    rep("B", n)
+  ) # l
 
   stopifnot(length(vtype) == num_decision_vars)
   msg <- "Integrality Constraints Complete."
@@ -381,7 +412,7 @@ miqcp_proj <- function(projection_index,
   # Pre-processing: fix residuals of outliers
   O_neg <- sort(O_neg)
   O_pos <- sort(O_pos)
-  O <- c(O_neg, O_pos)        # indices of fixed residuals
+  O <- c(O_neg, O_pos) # indices of fixed residuals
   if (!is.null(O)) {
     # If a residual is positive, then the associated k must be 1, which means
     # the dual variable, a, must also be 1. Accordingly, the associated l must
@@ -393,13 +424,15 @@ miqcp_proj <- function(projection_index,
     fixed[O] <- 1
     fixed_mat <- diag(fixed)
 
-    A_pp_a <- cbind(matrix(0, nrow = n, ncol = p_X),    # beta_X
-                    matrix(0, nrow = n, ncol = p_D),    # beta_D
-                    matrix(0, nrow = n, ncol = n),      # u
-                    matrix(0, nrow = n, ncol = n),      # v
-                    fixed_mat,                          # a
-                    matrix(0, nrow = n, ncol = n),      # k
-                    matrix(0, nrow = n, ncol = n))      # l
+    A_pp_a <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      fixed_mat, # a
+      matrix(0, nrow = n, ncol = n), # k
+      matrix(0, nrow = n, ncol = n)
+    ) # l
     b_a_fixed <- rep(0, n)
     b_a_fixed[O_pos] <- 1
     b_a_fixed[O_neg] <- 0
@@ -413,13 +446,15 @@ miqcp_proj <- function(projection_index,
     msg <- "Pre-processing for a Complete."
     send_note_if(msg, show_progress, message)
 
-    A_pp_k <- cbind(matrix(0, nrow = n, ncol = p_X),    # beta_X
-                    matrix(0, nrow = n, ncol = p_D),    # beta_D
-                    matrix(0, nrow = n, ncol = n),      # u
-                    matrix(0, nrow = n, ncol = n),      # v
-                    matrix(0, nrow = n, ncol = n),      # a
-                    fixed_mat,                          # k
-                    matrix(0, nrow = n, ncol = n))      # l
+    A_pp_k <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      matrix(0, nrow = n, ncol = n), # a
+      fixed_mat, # k
+      matrix(0, nrow = n, ncol = n)
+    ) # l
     b_k_fixed <- rep(0, n)
     b_k_fixed[O_pos] <- 1
     b_k_fixed[O_neg] <- 0
@@ -433,13 +468,15 @@ miqcp_proj <- function(projection_index,
     msg <- "Pre-processing for k Complete."
     send_note_if(msg, show_progress, message)
 
-    A_pp_l <- cbind(matrix(0, nrow = n, ncol = p_X),  # beta_X
-                    matrix(0, nrow = n, ncol = p_D),  # beta_D
-                    matrix(0, nrow = n, ncol = n),    # u
-                    matrix(0, nrow = n, ncol = n),    # v
-                    matrix(0, nrow = n, ncol = n),    # a
-                    matrix(0, nrow = n, ncol = n),    # k
-                    fixed_mat)                        # l
+    A_pp_l <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      matrix(0, nrow = n, ncol = n), # a
+      matrix(0, nrow = n, ncol = n), # k
+      fixed_mat
+    ) # l
     b_l_fixed <- rep(0, n)
     b_l_fixed[O_pos] <- 0
     b_l_fixed[O_neg] <- 1
@@ -478,11 +515,11 @@ miqcp_proj <- function(projection_index,
     Psi <- diag(1, nrow = n)
   } else {
     # Hall and Sheather (1988) bandwidth
-    tmp_a <- n ^ (1 / 3)
-    tmp_b <- stats::qnorm(1 - 0.5 * alpha) ^ (2 / 3)
-    tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau)) ^ 2)
-    tmp_d <- 2 * (stats::qnorm(tau) ^ 2) + 1
-    hs <- tmp_a * tmp_b * ((tmp_c / tmp_d) ^ (1 / 3))
+    tmp_a <- n^(1 / 3)
+    tmp_b <- stats::qnorm(1 - 0.5 * alpha)^(2 / 3)
+    tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau))^2)
+    tmp_d <- 2 * (stats::qnorm(tau)^2) + 1
+    hs <- tmp_a * tmp_b * ((tmp_c / tmp_d)^(1 / 3))
     if (kernel == "powell") {
       bw <- hs
       # TODO: double-check whether this is correct
@@ -494,7 +531,7 @@ miqcp_proj <- function(projection_index,
       Psi <- diag(stats::dnorm(residuals / bw), nrow = n, ncol = n)
     } else {
       stop(
-       "Let `homoskedasticity` be TRUE or choose an appropriate `kernel`."
+        "Let `homoskedasticity` be TRUE or choose an appropriate `kernel`."
       )
     }
   }
@@ -514,8 +551,10 @@ miqcp_proj <- function(projection_index,
   crit_value <- stats::qchisq(1 - alpha, p_D)
 
   qc <- matrix(0, nrow = num_decision_vars, ncol = num_decision_vars)
-  qc[(p_X + p_D + 2 * n + 1):(p_X + p_D + 3 * n),
-     (p_X + p_D + 2 * n + 1):(p_X + p_D + 3 * n)] <- tmp # quadratic
+  qc[
+    (p_X + p_D + 2 * n + 1):(p_X + p_D + 3 * n),
+    (p_X + p_D + 2 * n + 1):(p_X + p_D + 3 * n)
+  ] <- tmp # quadratic
   q <- as.numeric(-2 * (1 - tau) * qc %*% ones_dv) # linear
   qc_rhs_1 <- -1 * (1 - tau)^2 * t(ones_dv) %*% qc %*% ones_dv
   qc_rhs_2 <- tau * (1 - tau) * crit_value
@@ -527,15 +566,17 @@ miqcp_proj <- function(projection_index,
   # Putting it all together
   proj <- list()
   proj$obj <- obj
-  proj$A <- rbind(A_pf,    # Primal Feasibility
-                  A_df_X,  # Dual Feasibility - X
-                  A_cs_uk, # Complementary Slackness - u and k
-                  A_cs_vl, # Complementary Slackness - v and l
-                  A_cs_ak, # Complementary Slackness - a and k
-                  A_cs_al, # Complementary Slackness - a and l
-                  A_pp_a,  # Pre-processing - fixing a
-                  A_pp_k,  # Pre-processing - fixing k
-                  A_pp_l)  # Pre-processing - fixing l
+  proj$A <- rbind(
+    A_pf, # Primal Feasibility
+    A_df_X, # Dual Feasibility - X
+    A_cs_uk, # Complementary Slackness - u and k
+    A_cs_vl, # Complementary Slackness - v and l
+    A_cs_ak, # Complementary Slackness - a and k
+    A_cs_al, # Complementary Slackness - a and l
+    A_pp_a, # Pre-processing - fixing a
+    A_pp_k, # Pre-processing - fixing k
+    A_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("A:", nrow(proj$A), ncol(proj$A)))
   # message(paste("A_pf:", nrow(A_pf), ncol(A_pf)))
   # message(paste("A_df_X:", nrow(A_df_X), ncol(A_df_X)))
@@ -561,26 +602,30 @@ miqcp_proj <- function(projection_index,
   # out$b_pp_k <- b_pp_k # DEBUG
   # out$b_pp_l <- b_pp_l # DEBUG
 
-  proj$rhs <- c(b_pf,    # Primal Feasibility
-                b_df_X,  # Dual Feasibility - X
-                b_cs_uk, # Complementary Slackness - u and k
-                b_cs_vl, # Complementary Slackness - v and l
-                b_cs_ak, # Complementary Slackness - a and k
-                b_cs_al, # Complementary Slackness - a and l
-                b_pp_a,  # Pre-processing - fixing a
-                b_pp_k,  # Pre-processing - fixing k
-                b_pp_l)  # Pre-processing - fixing l
+  proj$rhs <- c(
+    b_pf, # Primal Feasibility
+    b_df_X, # Dual Feasibility - X
+    b_cs_uk, # Complementary Slackness - u and k
+    b_cs_vl, # Complementary Slackness - v and l
+    b_cs_ak, # Complementary Slackness - a and k
+    b_cs_al, # Complementary Slackness - a and l
+    b_pp_a, # Pre-processing - fixing a
+    b_pp_k, # Pre-processing - fixing k
+    b_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("b:", length(proj$rhs)))
 
-  proj$sense <- c(sense_pf,   # Primal Feasibility
-                 sense_df_X,  # Dual Feasibility - X
-                 sense_cs_uk, # Complementary Slackness - u and k
-                 sense_cs_vl, # Complementary Slackness - v and l
-                 sense_cs_ak, # Complementary Slackness - a and k
-                 sense_cs_al, # Complementary Slackness - a and l
-                 sense_pp_a,  # Pre-processing - fixing a
-                 sense_pp_k,  # Pre-processing - fixing k
-                 sense_pp_l)  # Pre-processing - fixing l
+  proj$sense <- c(
+    sense_pf, # Primal Feasibility
+    sense_df_X, # Dual Feasibility - X
+    sense_cs_uk, # Complementary Slackness - u and k
+    sense_cs_vl, # Complementary Slackness - v and l
+    sense_cs_ak, # Complementary Slackness - a and k
+    sense_cs_al, # Complementary Slackness - a and l
+    sense_pp_a, # Pre-processing - fixing a
+    sense_pp_k, # Pre-processing - fixing k
+    sense_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("sense:", length(proj$sense)))
 
   # Quadratic Constraint
@@ -610,11 +655,13 @@ miqcp_proj <- function(projection_index,
   send_note_if(msg, show_progress, message)
 
   # Return results
-  msg <- paste("Status of MIQCP Projection program:",
-               result$status,
-               "| Objective:",
-               format(result$objval, scientific = F, digits = 10))
-  send_note_if(msg, !quietly, message)  # Print status of program if !quietly
+  msg <- paste(
+    "Status of MIQCP Projection program:",
+    result$status,
+    "| Objective:",
+    format(result$objval, scientific = F, digits = 10)
+  )
+  send_note_if(msg, !quietly, message) # Print status of program if !quietly
 
   out$proj <- proj
   out$params <- params

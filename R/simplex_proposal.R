@@ -37,12 +37,14 @@
 #' @param center_subsample A binary vector of length `n` with `m` 1's that is
 #'  inside the FOC polytope of interest
 # TODO: finish documenting
-get_directions <- function(current_subsample,
-                           last,
-                           n_directions,
-                           center_subsample,
-                           avoid = NA,
-                           mode = "enter") {
+get_directions <- function(
+  current_subsample,
+  last,
+  n_directions,
+  center_subsample,
+  avoid = NA,
+  mode = "enter"
+) {
   # partition observations
   in_current <- which(current_subsample == 1)
   in_center <- which(center_subsample == 1)
@@ -50,17 +52,25 @@ get_directions <- function(current_subsample,
   out_center <- which(center_subsample == 0)
 
   if (tolower(mode) == "enter") {
-    in_center_out_current <- setdiff(sort(setdiff(in_center, in_current)),
-                                     avoid)
-    out_current_out_center <- setdiff(sort(intersect(out_current, out_center)),
-                                      avoid)
+    in_center_out_current <- setdiff(
+      sort(setdiff(in_center, in_current)),
+      avoid
+    )
+    out_current_out_center <- setdiff(
+      sort(intersect(out_current, out_center)),
+      avoid
+    )
     vec_list <- list(in_center_out_current, out_current_out_center)
   } else if (tolower(mode) == "exit") {
     # make sure we don't remove observations in `avoid`
-    in_current_out_center <- setdiff(sort(setdiff(in_current, in_center)),
-                                     avoid)
-    in_current_in_center <- setdiff(sort(intersect(in_center, in_current)),
-                                    avoid)
+    in_current_out_center <- setdiff(
+      sort(setdiff(in_current, in_center)),
+      avoid
+    )
+    in_current_in_center <- setdiff(
+      sort(intersect(in_center, in_current)),
+      avoid
+    )
     vec_list <- list(in_current_out_center, in_current_in_center)
   } else {
     stop("Wrong value for `mode`")
@@ -90,14 +100,16 @@ get_valid_directions <- function(vec_list, n_dir, last, dir = c()) {
   dir
 }
 
-simplex_proposal <- function(total_steps,
-                             start_subsample,
-                             entrant = which(start_subsample == 1)[1],
-                             exit = which(start_subsample == 0)[1],
-                             n_directions_enter,
-                             n_directions_exit,
-                             center_subsample,
-                             avoid = NA) {
+simplex_proposal <- function(
+  total_steps,
+  start_subsample,
+  entrant = which(start_subsample == 1)[1],
+  exit = which(start_subsample == 0)[1],
+  n_directions_enter,
+  n_directions_exit,
+  center_subsample,
+  avoid = NA
+) {
   sub <- start_subsample
   sub_list <- vector("list", total_steps)
   dist_to_center <- vector("list", total_steps)
@@ -107,20 +119,24 @@ simplex_proposal <- function(total_steps,
   exit_list <- vector("list", total_steps)
   for (step in seq_len(total_steps + 1)) {
     if (step != 1) {
-      enter_dir <- get_directions(sub,
-                                  entrant,
-                                  n_directions_enter,
-                                  center_subsample,
-                                  avoid,
-                                  mode = "enter")
+      enter_dir <- get_directions(
+        sub,
+        entrant,
+        n_directions_enter,
+        center_subsample,
+        avoid,
+        mode = "enter"
+      )
       entrant_index <- sample(seq_along(enter_dir), 1)
       entrant <- enter_dir[[entrant_index]]
-      exit_dir <- get_directions(sub,
-                                 exit,
-                                 n_directions_exit,
-                                 center_subsample,
-                                 avoid,
-                                 mode = "exit")
+      exit_dir <- get_directions(
+        sub,
+        exit,
+        n_directions_exit,
+        center_subsample,
+        avoid,
+        mode = "exit"
+      )
       exit_index <- sample(seq_along(exit_dir), 1)
       exit <- exit_dir[[exit_index]]
       sub[entrant] <- 1

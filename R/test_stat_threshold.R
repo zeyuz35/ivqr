@@ -77,31 +77,39 @@
 #'  dual-variables from short-iqr regression
 #' @param residuals Residuals from IQR MILP program; if NULL (default), use
 #'  residuals from short-iqr regression
+#' @param weights vector of observation weights; if supplied, the algorithm fits
+#'  to minimize the sum of the weights multiplied into the absolute residuals.
+#'  The length of weights must be the same as the number of observations.
+#'  The weights must be nonnegative.
+#' @param solver Choice of solver: "gurobi" (default) or "highs"
 #' @param show_progress If TRUE (default), sends progress messages during
 #'  execution (boolean); also passed to \code{preprocess_iqr_milp}
 #' @param print_results If TRUE (default), print the test-statistic, p-value,
 #'  and alpha level (boolean)
 #' @param ... Arguments passed to \code{preprocess_iqr_milp}
-test_stat_threshold <- function(beta_D_null,
-                                beta_X_null,
-                                alpha = 0.1,
-                                Y,
-                                X,
-                                D,
-                                Z,
-                                Phi = linear_projection(D, X, Z),
-                                tau,
-                                B = NULL,
-                                orthogonalize_statistic = FALSE,
-                                homoskedasticity = FALSE,
-                                a_hat = NULL,
-                                residuals = NULL,
-                                kernel = "Powell",
-                                show_progress = TRUE,
-                                print_results = TRUE,
-                                # FUN = preprocess_iqr_milp,
-                                ...) {
-
+test_stat_threshold <- function(
+  beta_D_null,
+  beta_X_null,
+  alpha = 0.1,
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  B = NULL,
+  orthogonalize_statistic = FALSE,
+  homoskedasticity = FALSE,
+  a_hat = NULL,
+  residuals = NULL,
+  weights = NULL,
+  solver = c("gurobi", "highs"),
+  kernel = "Powell",
+  show_progress = TRUE,
+  print_results = TRUE,
+  # FUN = preprocess_iqr_milp,
+  ...
+) {
   # Start clock
   clock_start <- Sys.time()
   msg <- paste("Clock started:", clock_start)
@@ -115,8 +123,10 @@ test_stat_threshold <- function(beta_D_null,
   # }
   kernel <- tolower(kernel)
   if (kernel != "powell" & kernel != "gaussian" & !homoskedasticity) {
-    stop(paste0("`kernel` should either be 'Powell' or 'Gaussian', not ",
-                kernel))
+    stop(paste0(
+      "`kernel` should either be 'Powell' or 'Gaussian', not ",
+      kernel
+    ))
   }
 
   # Get dimensions of data
@@ -168,16 +178,22 @@ test_stat_threshold <- function(beta_D_null,
     tmp <- tmp - X_K %*% beta_X_null_nontrivial
   }
   Y_tilde <- tmp
+  stopifnot(alpha < 1 & alpha > 0)
 
-  send_note_if("Concentrated out Y", show_progress, message)
+  if (!is.null(weights)) {
+    stopifnot(length(weights) == n)
+    stopifnot(all(weights >= 0))
+  }
 
+  out$beta_D_null <- beta_D_null
+  ...
   # Obtain \hat{a} and residuals via short-iqr regression
   if (is.null(a_hat) | is.null(residuals)) {
     if (ncol(D_J_minus) == 0) {
       # If there are no endogeneous variables, return quantile regression results:
       msg <- paste("p_D is 0 -- running QR instead of IQR MILP...")
       send_note_if(msg, TRUE, warning)
-      qr <- quantreg::rq(Y_tilde ~ X_K_minus - 1, tau = tau)
+      qr <- quantreg::rq(Y_tilde ~ X_K_minus - 1, tau = tau, weights = weights)
       short_iqr <- qr
       FUN <- "qr"
     } else {
@@ -188,6 +204,8 @@ test_stat_threshold <- function(beta_D_null,
         Z = Z_J_minus, # not really important since we specify Phi
         Phi = Phi_J_minus,
         tau = tau,
+        weights = weights,
+        solver = solver,
         show_progress = show_progress,
         ...
       )
@@ -231,7 +249,9 @@ test_stat_threshold <- function(beta_D_null,
       if (short_iqr_result$status != "OPTIMAL") {
         warning(paste("Short IQR Status:", short_iqr_result$status))
       }
-      if (short_iqr_result$status == "TIME_LIMIT" || short_iqr_result$objval != 0) {
+      if (
+        short_iqr_result$status == "TIME_LIMIT" || short_iqr_result$objval != 0
+      ) {
         message(paste("Short IQR Objective Value:", short_iqr_result$objval))
         out$ended_early <- TRUE
         return(out)
@@ -269,11 +289,11 @@ test_stat_threshold <- function(beta_D_null,
     Psi <- diag(1, nrow = n)
   } else {
     # Hall and Sheather (1988) bandwidth
-    tmp_a <- n ^ (1 / 3)
-    tmp_b <- stats::qnorm(1 - 0.5 * alpha) ^ (2 / 3)
-    tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau)) ^ 2)
-    tmp_d <- 2 * (stats::qnorm(tau) ^ 2) + 1
-    hs <- tmp_a * tmp_b * ((tmp_c / tmp_d) ^ (1 / 3))
+    tmp_a <- n^(1 / 3)
+    tmp_b <- stats::qnorm(1 - 0.5 * alpha)^(2 / 3)
+    tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau))^2)
+    tmp_d <- 2 * (stats::qnorm(tau)^2) + 1
+    hs <- tmp_a * tmp_b * ((tmp_c / tmp_d)^(1 / 3))
     out$hs <- hs
     if (kernel == "powell") {
       bw <- hs
@@ -285,10 +305,15 @@ test_stat_threshold <- function(beta_D_null,
       Psi <- diag(stats::dnorm(resid / bw), nrow = n, ncol = n)
     } else {
       stop(
-       "Let `homoskedasticity` be TRUE or choose an appropriate `kernel`."
+        "Let `homoskedasticity` be TRUE or choose an appropriate `kernel`."
       )
     }
   }
+
+  if (!is.null(weights)) {
+    Psi <- Psi * weights
+  }
+
   G_minus <- Psi %*% C_minus
   B_tilde <- B - B_minus %*% solve(t(G_minus) %*% B_minus) %*% t(G_minus) %*% B
 
@@ -300,10 +325,16 @@ test_stat_threshold <- function(beta_D_null,
   out$kernel <- ifelse(homoskedasticity, "homoskedasticity", kernel)
 
   # Construct S_n with orthogonalize_statistic
-  if (orthogonalize_statistic) {
-    S_n <- n ^ (-1 / 2) * t(B_tilde) %*% b_hat
+  if (!is.null(weights)) {
+    W_b_hat <- weights * b_hat
   } else {
-    S_n <- n ^ (-1 / 2) * t(B) %*% b_hat
+    W_b_hat <- b_hat
+  }
+
+  if (orthogonalize_statistic) {
+    S_n <- n^(-1 / 2) * t(B_tilde) %*% W_b_hat
+  } else {
+    S_n <- n^(-1 / 2) * t(B) %*% W_b_hat
   }
   stopifnot(nrow(S_n) == cardinality_J + cardinality_K)
   stopifnot(ncol(S_n) == 1)
@@ -314,13 +345,30 @@ test_stat_threshold <- function(beta_D_null,
 
   # Construct L_n or Q_n depending on |J| + |K| == or != 1
   # Compute p-value
+  if (!is.null(weights)) {
+    W2 <- weights^2
+    B_tilde_W2 <- sweep(B_tilde, 1, W2, "*")
+    B_W2 <- sweep(B, 1, W2, "*")
+  } else {
+    B_tilde_W2 <- B_tilde
+    B_W2 <- B
+  }
+
   if (cardinality_J + cardinality_K == 1) {
-    denom <- sqrt(tau * (1 - tau) * t(B_tilde) %*% B_tilde / n)
+    if (orthogonalize_statistic) {
+      denom <- sqrt(tau * (1 - tau) * t(B_tilde_W2) %*% B_tilde / n)
+    } else {
+      denom <- sqrt(tau * (1 - tau) * t(B_W2) %*% B / n)
+    }
     out$denom <- denom
     test_stat <- S_n / denom
     p_val <- 2 * (1 - stats::pnorm(abs(test_stat)))
   } else {
-    M_n <- (1 / n) * t(B_tilde) %*% B_tilde
+    if (orthogonalize_statistic) {
+      M_n <- (1 / n) * t(B_tilde_W2) %*% B_tilde
+    } else {
+      M_n <- (1 / n) * t(B_W2) %*% B
+    }
     out$M_n <- M_n
     test_stat <- t(S_n) %*% solve(M_n) %*% S_n / (tau * (1 - tau))
     p_val <- 1 - stats::pchisq(test_stat, df = cardinality_J + cardinality_K)

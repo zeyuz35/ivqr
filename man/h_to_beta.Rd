@@ -33,7 +33,7 @@ Given the active basis, find the coefficients that solve the IQR problem.
 }
 \seealso{
 Other mcmc_subsampling: 
-\code{\link{foc_membership_v2}()},
-\code{\link{foc_membership}()}
+\code{\link{foc_membership}()},
+\code{\link{foc_membership_v2}()}
 }
 \concept{mcmc_subsampling}

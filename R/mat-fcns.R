@@ -27,9 +27,15 @@
 #'
 #' @family matrix operations
 #' @seealso \code{\link{block_diagonal}}
-expand_matrix <- function(mat, newrow, newcol,
-                          row_direction, col_direction,
-                          fill = 0, quietly = TRUE) {
+expand_matrix <- function(
+  mat,
+  newrow,
+  newcol,
+  row_direction,
+  col_direction,
+  fill = 0,
+  quietly = TRUE
+) {
   current_row <- nrow(mat)
   current_col <- ncol(mat)
   stopifnot(current_row <= newrow)
@@ -41,8 +47,12 @@ expand_matrix <- function(mat, newrow, newcol,
   rowvalid <- ifelse(addrow == 0, FALSE, TRUE)
   colvalid <- ifelse(addcol == 0, FALSE, TRUE)
 
-  if (rowvalid & !quietly) message("Expanding by rows")
-  if (colvalid & !quietly) message("Expanding by cols")
+  if (rowvalid & !quietly) {
+    message("Expanding by rows")
+  }
+  if (colvalid & !quietly) {
+    message("Expanding by cols")
+  }
 
   if (rowvalid) {
     temp <- matrix(fill, nrow = addrow, ncol = ncol(mat))
@@ -102,18 +112,22 @@ block_diagonal <- function(mat_list, fill = 0) {
     seq_along(mat_list),
     function(mat_index) {
       mat <- mat_list[[mat_index]]
-      mat <- expand_matrix(mat,
-                           newrow = nrow(mat),
-                           newcol = left_cols[[mat_index]],
-                           row_direction = "top",
-                           col_direction = "left",
-                           fill = fill)
-      mat <- expand_matrix(mat,
-                           newrow = nrow(mat),
-                           newcol = total_cols,
-                           row_direction = "bottom",
-                           col_direction = "right",
-                           fill = fill)
+      mat <- expand_matrix(
+        mat,
+        newrow = nrow(mat),
+        newcol = left_cols[[mat_index]],
+        row_direction = "top",
+        col_direction = "left",
+        fill = fill
+      )
+      mat <- expand_matrix(
+        mat,
+        newrow = nrow(mat),
+        newcol = total_cols,
+        row_direction = "bottom",
+        col_direction = "right",
+        fill = fill
+      )
     }
   )
   do.call(rbind, mat_expanded)

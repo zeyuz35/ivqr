@@ -12,7 +12,7 @@
 #' Compute inverse quantile regression estimator
 #'
 #' Solve a mixed integer linear program to compute the inverse
-#' quantile regression estimator.
+#' quantile regression estimator using either Gurobi or HiGHS.
 #'
 #' @param Y Dependent variable (vector of length n)
 #' @param X Exogenous variable (including constant vector) (n by p_X matrix)
@@ -21,6 +21,48 @@
 #' @param Phi Transformation of X and Z to be used in the program;
 #'  defaults to the linear projection of D on X and Z (matrix with n rows)
 #' @param tau Quantile (number between 0 and 1)
+#' @param solver Choice of solver: "gurobi" (default) or "highs"
+#' @param ... Arguments passed to \code{iqr_milp_gurobi} or \code{iqr_milp_highs}
+#'
+#' @export
+iqr_milp <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  solver = c("gurobi", "highs"),
+  ...
+) {
+  solver <- match.arg(solver)
+  if (solver == "gurobi") {
+    return(iqr_milp_gurobi(
+      Y = Y,
+      X = X,
+      D = D,
+      Z = Z,
+      Phi = Phi,
+      tau = tau,
+      ...
+    ))
+  } else {
+    return(iqr_milp_highs(
+      Y = Y,
+      X = X,
+      D = D,
+      Z = Z,
+      Phi = Phi,
+      tau = tau,
+      ...
+    ))
+  }
+}
+
+### iqr_milp_gurobi -------------------------
+#' Compute inverse quantile regression estimator using Gurobi
+#'
+#' @inheritParams iqr_milp
 #' @param O_neg,O_pos Indices for residuals whose sign is fixed to be negative
 #'  and positive, respectively (vectors)
 #' @param M A large number that bounds the absolute value of the residuals
@@ -67,6 +109,10 @@
 #'    \item k
 #'    \item l
 #'  }
+#' @param weights vector of observation weights; if supplied, the algorithm fits
+#'  to minimize the sum of the weights multiplied into the absolute residuals.
+#'  The length of weights must be the same as the number of observations.
+#'  The weights must be nonnegative.
 #' @param sparse If TRUE (default), use sparse matrices
 #' @param quietly If TRUE (default), supress messages during execution (boolean)
 #' @param show_progress If TRUE (default), sends progress messages during
@@ -101,31 +147,32 @@
 #'  }
 #'
 #' @export
-iqr_milp <- function(Y,
-                     X,
-                     D,
-                     Z,
-                     Phi = linear_projection(D, X, Z),
-                     tau,
-                     O_neg = NULL,
-                     O_pos = NULL,
-                     M = NULL,
-                     TimeLimit = 300,
-                     VarHintVal_bool = FALSE,
-                     VarHintPri_bool = FALSE,
-                     BranchPriority_bool = FALSE,
-                     sparse = TRUE,
-                     attributes = list(),
-                     params = list(FeasibilityTol = 1e-6,
-                                   LogToConsole = 0),
-                     start_method = NULL,
-                     start = NULL,
-                     fix = NULL,
-                     quietly = TRUE,
-                     show_progress = TRUE,
-                     LogFileName = "",
-                     LogFileExt = ".log") {
-
+iqr_milp_gurobi <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  weights = NULL,
+  O_neg = NULL,
+  O_pos = NULL,
+  M = NULL,
+  TimeLimit = 300,
+  VarHintVal_bool = FALSE,
+  VarHintPri_bool = FALSE,
+  BranchPriority_bool = FALSE,
+  sparse = TRUE,
+  attributes = list(),
+  params = list(FeasibilityTol = 1e-6, LogToConsole = 0),
+  start_method = NULL,
+  start = NULL,
+  fix = NULL,
+  quietly = TRUE,
+  show_progress = TRUE,
+  LogFileName = "",
+  LogFileExt = ".log"
+) {
   out <- list() # Initialize list of results to return
 
   send_note_if(paste("TimeLimit:", TimeLimit, "secs"), show_progress, message)
@@ -147,11 +194,16 @@ iqr_milp <- function(Y,
   stopifnot(all.equal(n, n_Z))
   stopifnot(all.equal(n, n_Phi))
 
+  if (!is.null(weights)) {
+    stopifnot(length(weights) == n)
+    stopifnot(all(weights >= 0))
+  }
+
   # If there are no endogeneous variables, return quantile regression results:
   if (p_D == 0) {
     msg <- paste("p_D is 0 -- running QR instead of IQR MILP...")
     send_note_if(msg, TRUE, warning)
-    qr <- quantreg::rq(Y ~ X - 1, tau = tau)
+    qr <- quantreg::rq(Y ~ X - 1, tau = tau, weights = weights)
     out <- qr
     return(out)
   }
@@ -166,16 +218,21 @@ iqr_milp <- function(Y,
     # TODO: update heuristic for choosing M
     # TODO: update documentation with default M
     if (p_X == 0) {
-      max_qr <- max(abs(quantreg::rq(Y ~ D - 1, tau = tau)$residuals))
+      max_qr <- max(abs(
+        quantreg::rq(Y ~ D - 1, tau = tau, weights = weights)$residuals
+      ))
     } else if (p_D == 0) {
-      max_qr <- max(abs(quantreg::rq(Y ~ X - 1, tau = tau)$residuals))
+      max_qr <- max(abs(
+        quantreg::rq(Y ~ X - 1, tau = tau, weights = weights)$residuals
+      ))
     } else {
-      max_qr <- max(abs(quantreg::rq(Y ~ X + D - 1, tau = tau)$residuals))
+      max_qr <- max(abs(
+        quantreg::rq(Y ~ X + D - 1, tau = tau, weights = weights)$residuals
+      ))
     }
     M <- 2 * max_qr
   }
   out$M <- M
-
 
   # Decision variables in order from left/top to right/bottom:
   # 1. beta_X
@@ -191,15 +248,17 @@ iqr_milp <- function(Y,
   num_decision_vars <- p_X + 2 * p_Phi + p_D + 5 * n
 
   # Objective: minimize absolute value of \beta_Phi
-  obj <- c(rep(0, p_X),   # beta_X
-           rep(1, p_Phi), # beta_Phi_plus
-           rep(1, p_Phi), # beta_Phi_minus
-           rep(0, p_D),   # beta_D
-           rep(0, n),     # u
-           rep(0, n),     # v
-           rep(0, n),     # a
-           rep(0, n),     # k
-           rep(0, n))     # l
+  obj <- c(
+    rep(0, p_X), # beta_X
+    rep(1, p_Phi), # beta_Phi_plus
+    rep(1, p_Phi), # beta_Phi_minus
+    rep(0, p_D), # beta_D
+    rep(0, n), # u
+    rep(0, n), # v
+    rep(0, n), # a
+    rep(0, n), # k
+    rep(0, n)
+  ) # l
   stopifnot(length(obj) == num_decision_vars)
 
   # Fix decision variables according to `fix`
@@ -219,15 +278,17 @@ iqr_milp <- function(Y,
   }
 
   # Primal Feasibility Constraint (11)
-  A_pf <- cbind(X,                  # beta_X
-                Phi,                # beta_Phi_plus
-                -Phi,               # beta_Phi_minus
-                D,                  # beta_D
-                diag(1, nrow = n),  # u
-                -diag(1, nrow = n), # v
-                diag(0, nrow = n),  # a
-                diag(0, nrow = n),  # k
-                diag(0, nrow = n))  # l
+  A_pf <- cbind(
+    X, # beta_X
+    Phi, # beta_Phi_plus
+    -Phi, # beta_Phi_minus
+    D, # beta_D
+    diag(1, nrow = n), # u
+    -diag(1, nrow = n), # v
+    diag(0, nrow = n), # a
+    diag(0, nrow = n), # k
+    diag(0, nrow = n)
+  ) # l
   b_pf <- Y
   sense_pf <- rep("=", n)
 
@@ -239,16 +300,23 @@ iqr_milp <- function(Y,
   send_note_if(msg, show_progress, message)
 
   # Dual Feasibility Constraint (13) and (14)
-  A_df_X <- cbind(matrix(0, nrow = p_X, ncol = p_X),  # beta_X
-                  matrix(0, nrow = p_X, ncol = p_Phi),  # beta_Phi_plus
-                  matrix(0, nrow = p_X, ncol = p_Phi),  # beta_Phi_minus
-                  matrix(0, nrow = p_X, ncol = p_D),  # beta_D
-                  matrix(0, nrow = p_X, ncol = n),  # u
-                  matrix(0, nrow = p_X, ncol = n),  # v
-                  t(X),                 # a
-                  matrix(0, nrow = p_X, ncol = n),  # k
-                  matrix(0, nrow = p_X, ncol = n))  # l
-  b_df_X <- (1 - tau) * t(X) %*% ones
+  if (!is.null(weights)) {
+    W_X <- sweep(X, 1, weights, "*")
+  } else {
+    W_X <- X
+  }
+  A_df_X <- cbind(
+    matrix(0, nrow = p_X, ncol = p_X), # beta_X
+    matrix(0, nrow = p_X, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = p_X, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = p_X, ncol = p_D), # beta_D
+    matrix(0, nrow = p_X, ncol = n), # u
+    matrix(0, nrow = p_X, ncol = n), # v
+    t(W_X), # a
+    matrix(0, nrow = p_X, ncol = n), # k
+    matrix(0, nrow = p_X, ncol = n)
+  ) # l
+  b_df_X <- (1 - tau) * t(W_X) %*% ones
   sense_df_X <- rep("=", p_X)
 
   stopifnot(ncol(A_df_X) == num_decision_vars)
@@ -258,17 +326,23 @@ iqr_milp <- function(Y,
   msg <- paste("Dual Feasibility for X Complete.")
   send_note_if(msg, show_progress, message)
 
-
-  A_df_Phi <- cbind(matrix(0, nrow = p_Phi, ncol = p_X),    # beta_X
-                    matrix(0, nrow = p_Phi, ncol = p_Phi),  # beta_Phi_plus
-                    matrix(0, nrow = p_Phi, ncol = p_Phi),  # beta_Phi_minus
-                    matrix(0, nrow = p_Phi, ncol = p_D),    # beta_D
-                    matrix(0, nrow = p_Phi, ncol = n),      # u
-                    matrix(0, nrow = p_Phi, ncol = n),      # v
-                    t(Phi),                                 # a
-                    matrix(0, nrow = p_Phi, ncol = n),      # k
-                    matrix(0, nrow = p_Phi, ncol = n))      # l
-  b_df_Phi <- (1 - tau) * t(Phi) %*% ones
+  if (!is.null(weights)) {
+    W_Phi <- sweep(Phi, 1, weights, "*")
+  } else {
+    W_Phi <- Phi
+  }
+  A_df_Phi <- cbind(
+    matrix(0, nrow = p_Phi, ncol = p_X), # beta_X
+    matrix(0, nrow = p_Phi, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = p_Phi, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = p_Phi, ncol = p_D), # beta_D
+    matrix(0, nrow = p_Phi, ncol = n), # u
+    matrix(0, nrow = p_Phi, ncol = n), # v
+    t(W_Phi), # a
+    matrix(0, nrow = p_Phi, ncol = n), # k
+    matrix(0, nrow = p_Phi, ncol = n)
+  ) # l
+  b_df_Phi <- (1 - tau) * t(W_Phi) %*% ones
   sense_df_Phi <- rep("=", p_Phi)
 
   stopifnot(ncol(A_df_Phi) == num_decision_vars)
@@ -279,15 +353,17 @@ iqr_milp <- function(Y,
   send_note_if(msg, show_progress, message)
 
   # Complementary Slackness (16) and (17)
-  A_cs_uk <- cbind(matrix(0, nrow = n, ncol = p_X),       # beta_X
-                   matrix(0, nrow = n, ncol = p_Phi),     # beta_Phi_plus
-                   matrix(0, nrow = n, ncol = p_Phi),     # beta_Phi_minus
-                   matrix(0, nrow = n, ncol = p_D),       # beta_D
-                   diag(1, nrow = n, ncol = n),           # u
-                   matrix(0, nrow = n, ncol = n),         # v
-                   matrix(0, nrow = n, ncol = n),         # a
-                   -M * diag(1, nrow = n, ncol = n),      # k
-                   matrix(0, nrow = n, ncol = n))         # l
+  A_cs_uk <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    diag(1, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    matrix(0, nrow = n, ncol = n), # a
+    -M * diag(1, nrow = n, ncol = n), # k
+    matrix(0, nrow = n, ncol = n)
+  ) # l
   b_cs_uk <- rep(0, n)
   sense_cs_uk <- rep("<=", n)
 
@@ -298,15 +374,17 @@ iqr_milp <- function(Y,
   msg <- paste("Complementary Slackness for u and k Complete.")
   send_note_if(msg, show_progress, message)
 
-  A_cs_vl <- cbind(matrix(0, nrow = n, ncol = p_X),       # beta_X
-                   matrix(0, nrow = n, ncol = p_Phi),     # beta_Phi_plus
-                   matrix(0, nrow = n, ncol = p_Phi),     # beta_Phi_minus
-                   matrix(0, nrow = n, ncol = p_D),       # beta_D
-                   matrix(0, nrow = n, ncol = n),         # u
-                   diag(1, nrow = n, ncol = n),           # v
-                   matrix(0, nrow = n, ncol = n),         # a
-                   matrix(0, nrow = n, ncol = n),         # k
-                   -M * diag(1, nrow = n, ncol = n))      # l
+  A_cs_vl <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    diag(1, nrow = n, ncol = n), # v
+    matrix(0, nrow = n, ncol = n), # a
+    matrix(0, nrow = n, ncol = n), # k
+    -M * diag(1, nrow = n, ncol = n)
+  ) # l
   b_cs_vl <- rep(0, n)
   sense_cs_vl <- rep("<=", n)
 
@@ -317,15 +395,17 @@ iqr_milp <- function(Y,
   msg <- paste("Complementary Slackness for v and l Complete.")
   send_note_if(msg, show_progress, message)
 
-  A_cs_ak <- cbind(matrix(0, nrow = n, ncol = p_X),     # beta_X
-                   matrix(0, nrow = n, ncol = p_Phi),   # beta_Phi_plus
-                   matrix(0, nrow = n, ncol = p_Phi),   # beta_Phi_minus
-                   matrix(0, nrow = n, ncol = p_D),     # beta_D
-                   matrix(0, nrow = n, ncol = n),       # u
-                   matrix(0, nrow = n, ncol = n),       # v
-                   diag(1, nrow = n, ncol = n),         # a
-                   -diag(1, nrow = n, ncol = n),        # k
-                   matrix(0, nrow = n, ncol = n))       # l
+  A_cs_ak <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    diag(1, nrow = n, ncol = n), # a
+    -diag(1, nrow = n, ncol = n), # k
+    matrix(0, nrow = n, ncol = n)
+  ) # l
   b_cs_ak <- rep(0, n)
   sense_cs_ak <- rep(">=", n)
 
@@ -336,15 +416,17 @@ iqr_milp <- function(Y,
   msg <- paste("Complementary Slackness for a and k Complete.")
   send_note_if(msg, show_progress, message)
 
-  A_cs_al <- cbind(matrix(0, nrow = n, ncol = p_X), # beta_X
-                   matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
-                   matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
-                   matrix(0, nrow = n, ncol = p_D), # beta_D
-                   matrix(0, nrow = n, ncol = n), # u
-                   matrix(0, nrow = n, ncol = n), # v
-                   diag(1, nrow = n, ncol = n), # a
-                   matrix(0, nrow = n, ncol = n), # k
-                   diag(1, nrow = n, ncol = n)) # l
+  A_cs_al <- cbind(
+    matrix(0, nrow = n, ncol = p_X), # beta_X
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+    matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+    matrix(0, nrow = n, ncol = p_D), # beta_D
+    matrix(0, nrow = n, ncol = n), # u
+    matrix(0, nrow = n, ncol = n), # v
+    diag(1, nrow = n, ncol = n), # a
+    matrix(0, nrow = n, ncol = n), # k
+    diag(1, nrow = n, ncol = n)
+  ) # l
   b_cs_al <- rep(1, n)
   sense_cs_al <- rep("<=", n)
 
@@ -356,24 +438,28 @@ iqr_milp <- function(Y,
   send_note_if(msg, show_progress, message)
 
   # Non-negativity and Boundedness Constraints (12) and (15)
-  lb <- c(rep(-Inf, p_X), # beta_X
-          rep(0, p_Phi),    # beta_Phi_plus
-          rep(0, p_Phi),    # beta_Phi_minus
-          rep(-Inf, p_D), # beta_D
-          rep(0, n),      # u
-          rep(0, n),      # v
-          rep(0, n),      # a
-          rep(0, n),      # k
-          rep(0, n))      # l
-  ub <- c(rep(Inf, p_X),  # beta_X
-          rep(Inf, p_Phi),  # beta_Phi_plus
-          rep(Inf, p_Phi),  # beta_Phi_minus
-          rep(Inf, p_D),  # beta_D
-          rep(Inf, n),    # u
-          rep(Inf, n),    # v
-          rep(1, n),      # a
-          rep(1, n),      # k
-          rep(1, n))      # l
+  lb <- c(
+    rep(-Inf, p_X), # beta_X
+    rep(0, p_Phi), # beta_Phi_plus
+    rep(0, p_Phi), # beta_Phi_minus
+    rep(-Inf, p_D), # beta_D
+    rep(0, n), # u
+    rep(0, n), # v
+    rep(0, n), # a
+    rep(0, n), # k
+    rep(0, n)
+  ) # l
+  ub <- c(
+    rep(Inf, p_X), # beta_X
+    rep(Inf, p_Phi), # beta_Phi_plus
+    rep(Inf, p_Phi), # beta_Phi_minus
+    rep(Inf, p_D), # beta_D
+    rep(Inf, n), # u
+    rep(Inf, n), # v
+    rep(1, n), # a
+    rep(1, n), # k
+    rep(1, n)
+  ) # l
 
   stopifnot(length(lb) == num_decision_vars)
   stopifnot(length(ub) == num_decision_vars)
@@ -381,15 +467,17 @@ iqr_milp <- function(Y,
   send_note_if(msg, show_progress, message)
 
   # Integrality Constraint (see vtype) (18)
-  vtype <- c(rep("C", p_X), # beta_X
-             rep("C", p_Phi), # beta_Phi_plus
-             rep("C", p_Phi), # beta_Phi_minus
-             rep("C", p_D), # beta_D
-             rep("C", n),   # u
-             rep("C", n),   # v
-             rep("C", n),   # a
-             rep("B", n),   # k
-             rep("B", n))   # l
+  vtype <- c(
+    rep("C", p_X), # beta_X
+    rep("C", p_Phi), # beta_Phi_plus
+    rep("C", p_Phi), # beta_Phi_minus
+    rep("C", p_D), # beta_D
+    rep("C", n), # u
+    rep("C", n), # v
+    rep("C", n), # a
+    rep("B", n), # k
+    rep("B", n)
+  ) # l
 
   stopifnot(length(vtype) == num_decision_vars)
   msg <- "Integrality Constraints Complete."
@@ -398,7 +486,7 @@ iqr_milp <- function(Y,
   # Pre-processing: fix residuals of outliers
   O_neg <- sort(O_neg)
   O_pos <- sort(O_pos)
-  O <- c(O_neg, O_pos)        # indices of fixed residuals
+  O <- c(O_neg, O_pos) # indices of fixed residuals
   if (!is.null(O) & !VarHintVal_bool) {
     # If a residual is positive, then the associated k must be 1, which means
     # the dual variable, a, must also be 1. Accordingly, the associated l must
@@ -410,15 +498,17 @@ iqr_milp <- function(Y,
     fixed[O] <- 1
     fixed_mat <- diag(fixed)
 
-    A_pp_a <- cbind(matrix(0, nrow = n, ncol = p_X),    # beta_X
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_plus
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_minus
-                    matrix(0, nrow = n, ncol = p_D),    # beta_D
-                    matrix(0, nrow = n, ncol = n),      # u
-                    matrix(0, nrow = n, ncol = n),      # v
-                    fixed_mat,                          # a
-                    matrix(0, nrow = n, ncol = n),      # k
-                    matrix(0, nrow = n, ncol = n))      # l
+    A_pp_a <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      fixed_mat, # a
+      matrix(0, nrow = n, ncol = n), # k
+      matrix(0, nrow = n, ncol = n)
+    ) # l
     b_a_fixed <- rep(0, n)
     b_a_fixed[O_pos] <- 1
     b_a_fixed[O_neg] <- 0
@@ -432,15 +522,17 @@ iqr_milp <- function(Y,
     msg <- "Pre-processing for a Complete."
     send_note_if(msg, show_progress, message)
 
-    A_pp_k <- cbind(matrix(0, nrow = n, ncol = p_X),    # beta_X
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_plus
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_minus
-                    matrix(0, nrow = n, ncol = p_D),    # beta_D
-                    matrix(0, nrow = n, ncol = n),      # u
-                    matrix(0, nrow = n, ncol = n),      # v
-                    matrix(0, nrow = n, ncol = n),      # a
-                    fixed_mat,                          # k
-                    matrix(0, nrow = n, ncol = n))      # l
+    A_pp_k <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      matrix(0, nrow = n, ncol = n), # a
+      fixed_mat, # k
+      matrix(0, nrow = n, ncol = n)
+    ) # l
     b_k_fixed <- rep(0, n)
     b_k_fixed[O_pos] <- 1
     b_k_fixed[O_neg] <- 0
@@ -454,15 +546,17 @@ iqr_milp <- function(Y,
     msg <- "Pre-processing for k Complete."
     send_note_if(msg, show_progress, message)
 
-    A_pp_l <- cbind(matrix(0, nrow = n, ncol = p_X),  # beta_X
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_plus
-                    matrix(0, nrow = n, ncol = p_Phi),  # beta_Phi_minus
-                    matrix(0, nrow = n, ncol = p_D),  # beta_D
-                    matrix(0, nrow = n, ncol = n),    # u
-                    matrix(0, nrow = n, ncol = n),    # v
-                    matrix(0, nrow = n, ncol = n),    # a
-                    matrix(0, nrow = n, ncol = n),    # k
-                    fixed_mat)        # l
+    A_pp_l <- cbind(
+      matrix(0, nrow = n, ncol = p_X), # beta_X
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_plus
+      matrix(0, nrow = n, ncol = p_Phi), # beta_Phi_minus
+      matrix(0, nrow = n, ncol = p_D), # beta_D
+      matrix(0, nrow = n, ncol = n), # u
+      matrix(0, nrow = n, ncol = n), # v
+      matrix(0, nrow = n, ncol = n), # a
+      matrix(0, nrow = n, ncol = n), # k
+      fixed_mat
+    ) # l
     b_l_fixed <- rep(0, n)
     b_l_fixed[O_pos] <- 0
     b_l_fixed[O_neg] <- 1
@@ -475,7 +569,6 @@ iqr_milp <- function(Y,
     stopifnot(length(sense_pp_l) == n)
     msg <- "Pre-processing for l Complete."
     send_note_if(msg, show_progress, message)
-
   } else {
     A_pp_a <- c()
     b_pp_a <- c()
@@ -494,11 +587,15 @@ iqr_milp <- function(Y,
     # NOTE: the `resid` is obtained from code used in `preprocess_iqr_milp`
     # TODO: remove possible redundancy of computing QR to get residuals between `iqr_milp` and `preprocess_iqr_milp`
     if (p_X == 0) {
-      resid <- quantreg::rq(Y ~ D - 1, tau = tau)$residuals
+      resid <- quantreg::rq(Y ~ D - 1, tau = tau, weights = weights)$residuals
     } else if (p_D == 0) {
-      resid <- quantreg::rq(Y ~ X - 1, tau = tau)$residuals
+      resid <- quantreg::rq(Y ~ X - 1, tau = tau, weights = weights)$residuals
     } else {
-      resid <- quantreg::rq(Y ~ X + D - 1, tau = tau)$residuals
+      resid <- quantreg::rq(
+        Y ~ X + D - 1,
+        tau = tau,
+        weights = weights
+      )$residuals
     }
     hints_pri <- order(abs(resid))
   }
@@ -516,10 +613,20 @@ iqr_milp <- function(Y,
     l_hints[O_pos] <- 0
     l_hints[O_neg] <- 1
 
-    VarHintVal <- c(rep(NA, num_decision_vars - 3 * n), a_hints, k_hints, l_hints)
+    VarHintVal <- c(
+      rep(NA, num_decision_vars - 3 * n),
+      a_hints,
+      k_hints,
+      l_hints
+    )
 
     if (VarHintPri_bool) {
-      VarHintPri <- c(rep(0, num_decision_vars - 3 * n), hints_pri, hints_pri, hints_pri)
+      VarHintPri <- c(
+        rep(0, num_decision_vars - 3 * n),
+        hints_pri,
+        hints_pri,
+        hints_pri
+      )
     } else {
       VarHintPri <- NULL
     }
@@ -531,7 +638,12 @@ iqr_milp <- function(Y,
     message("`VarHintVal_bool` is FALSE; ignoring `VarHintPri_bool`")
   }
   if (!is.null(O) & BranchPriority_bool) {
-    BranchPriority <- c(rep(0, num_decision_vars - 3 * n), hints_pri, hints_pri, hints_pri)
+    BranchPriority <- c(
+      rep(0, num_decision_vars - 3 * n),
+      hints_pri,
+      hints_pri,
+      hints_pri
+    )
   } else {
     BranchPriority <- NULL
   }
@@ -539,17 +651,19 @@ iqr_milp <- function(Y,
   # Putting it all together
   iqr <- list()
   iqr$obj <- obj
-  iqr$A <- rbind(A_fix,   # `fix`
-                 A_pf,    # Primal Feasibility
-                 A_df_X,  # Dual Feasibility - X
-                 A_df_Phi,  # Dual Feasibility - Phi
-                 A_cs_uk, # Complementary Slackness - u and k
-                 A_cs_vl, # Complementary Slackness - v and l
-                 A_cs_ak, # Complementary Slackness - a and k
-                 A_cs_al, # Complementary Slackness - a and l
-                 A_pp_a,  # Pre-processing - fixing a
-                 A_pp_k,  # Pre-processing - fixing k
-                 A_pp_l)  # Pre-processing - fixing l
+  iqr$A <- rbind(
+    A_fix, # `fix`
+    A_pf, # Primal Feasibility
+    A_df_X, # Dual Feasibility - X
+    A_df_Phi, # Dual Feasibility - Phi
+    A_cs_uk, # Complementary Slackness - u and k
+    A_cs_vl, # Complementary Slackness - v and l
+    A_cs_ak, # Complementary Slackness - a and k
+    A_cs_al, # Complementary Slackness - a and l
+    A_pp_a, # Pre-processing - fixing a
+    A_pp_k, # Pre-processing - fixing k
+    A_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("A:", nrow(iqr$A), ncol(iqr$A)))
   # message(paste("A_pf:", nrow(A_pf), ncol(A_pf)))
   # message(paste("A_df_X:", nrow(A_df_X), ncol(A_df_X)))
@@ -565,44 +679,48 @@ iqr_milp <- function(Y,
     iqr$A <- as(iqr$A, "sparseMatrix")
   }
 
-  iqr$rhs <- c(b_fix,   # `fix`
-               b_pf,    # Primal Feasibility
-               b_df_X,  # Dual Feasibility - X
-               b_df_Phi,  # Dual Feasibility - Phi
-               b_cs_uk, # Complementary Slackness - u and k
-               b_cs_vl, # Complementary Slackness - v and l
-               b_cs_ak, # Complementary Slackness - a and k
-               b_cs_al, # Complementary Slackness - a and l
-               b_pp_a,  # Pre-processing - fixing a
-               b_pp_k,  # Pre-processing - fixing k
-               b_pp_l)  # Pre-processing - fixing l
+  iqr$rhs <- c(
+    b_fix, # `fix`
+    b_pf, # Primal Feasibility
+    b_df_X, # Dual Feasibility - X
+    b_df_Phi, # Dual Feasibility - Phi
+    b_cs_uk, # Complementary Slackness - u and k
+    b_cs_vl, # Complementary Slackness - v and l
+    b_cs_ak, # Complementary Slackness - a and k
+    b_cs_al, # Complementary Slackness - a and l
+    b_pp_a, # Pre-processing - fixing a
+    b_pp_k, # Pre-processing - fixing k
+    b_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("b:", length(iqr$rhs)))
 
-  iqr$sense <- c(sense_fix,   # `fix`
-                 sense_pf,    # Primal Feasibility
-                 sense_df_X,  # Dual Feasibility - X
-                 sense_df_Phi,  # Dual Feasibility - Phi
-                 sense_cs_uk, # Complementary Slackness - u and k
-                 sense_cs_vl, # Complementary Slackness - v and l
-                 sense_cs_ak, # Complementary Slackness - a and k
-                 sense_cs_al, # Complementary Slackness - a and l
-                 sense_pp_a,  # Pre-processing - fixing a
-                 sense_pp_k,  # Pre-processing - fixing k
-                 sense_pp_l)  # Pre-processing - fixing l
+  iqr$sense <- c(
+    sense_fix, # `fix`
+    sense_pf, # Primal Feasibility
+    sense_df_X, # Dual Feasibility - X
+    sense_df_Phi, # Dual Feasibility - Phi
+    sense_cs_uk, # Complementary Slackness - u and k
+    sense_cs_vl, # Complementary Slackness - v and l
+    sense_cs_ak, # Complementary Slackness - a and k
+    sense_cs_al, # Complementary Slackness - a and l
+    sense_pp_a, # Pre-processing - fixing a
+    sense_pp_k, # Pre-processing - fixing k
+    sense_pp_l
+  ) # Pre-processing - fixing l
   # message(paste("sense:", length(iqr$sense)))
 
   iqr$constrnames <- c(
-    paste0("fix", seq_along(sense_fix), recycle0 = TRUE),        # sum(not_na)
-    paste0("pf", seq_along(sense_pf), recycle0 = TRUE),          # n
-    paste0("df_X", seq_along(sense_df_X), recycle0 = TRUE),      # p_X
-    paste0("df_Phi", seq_along(sense_df_Phi), recycle0 = TRUE),  # p_Phi
-    paste0("cs_uk", seq_along(sense_cs_uk), recycle0 = TRUE),    # n
-    paste0("cs_vl", seq_along(sense_cs_vl), recycle0 = TRUE),    # n
-    paste0("cs_ak", seq_along(sense_cs_ak), recycle0 = TRUE),    # n
-    paste0("cs_al", seq_along(sense_cs_al), recycle0 = TRUE),    # n
-    paste0("pp_a", seq_along(sense_pp_a), recycle0 = TRUE),      # n if !is.null(O)
-    paste0("pp_k", seq_along(sense_pp_k), recycle0 = TRUE),      # n if !is.null(O)
-    paste0("pp_l", seq_along(sense_pp_l), recycle0 = TRUE)       # n if !is.null(O)
+    paste0("fix", seq_along(sense_fix), recycle0 = TRUE), # sum(not_na)
+    paste0("pf", seq_along(sense_pf), recycle0 = TRUE), # n
+    paste0("df_X", seq_along(sense_df_X), recycle0 = TRUE), # p_X
+    paste0("df_Phi", seq_along(sense_df_Phi), recycle0 = TRUE), # p_Phi
+    paste0("cs_uk", seq_along(sense_cs_uk), recycle0 = TRUE), # n
+    paste0("cs_vl", seq_along(sense_cs_vl), recycle0 = TRUE), # n
+    paste0("cs_ak", seq_along(sense_cs_ak), recycle0 = TRUE), # n
+    paste0("cs_al", seq_along(sense_cs_al), recycle0 = TRUE), # n
+    paste0("pp_a", seq_along(sense_pp_a), recycle0 = TRUE), # n if !is.null(O)
+    paste0("pp_k", seq_along(sense_pp_k), recycle0 = TRUE), # n if !is.null(O)
+    paste0("pp_l", seq_along(sense_pp_l), recycle0 = TRUE) # n if !is.null(O)
   )
 
   iqr$varnames <- c(
@@ -634,13 +752,15 @@ iqr_milp <- function(Y,
       stop("ncol of A doesn't match length of start.")
     }
   } else if (!is.null(start_method)) {
-    iqr$start <- compute_warmstart(Y = Y,
-                                   X = X,
-                                   D = D,
-                                   Z = Z,
-                                   Phi = Phi,
-                                   tau = tau,
-                                   method = start_method)
+    iqr$start <- compute_warmstart(
+      Y = Y,
+      X = X,
+      D = D,
+      Z = Z,
+      Phi = Phi,
+      tau = tau,
+      method = start_method
+    )
   }
 
   iqr$varhintval <- VarHintVal # TODO: send warning if attribute already exists?
@@ -660,11 +780,13 @@ iqr_milp <- function(Y,
   send_note_if(msg, show_progress, message)
 
   # Return results
-  msg <- paste("Status of IQR program:",
-               result$status,
-               "| Objective:",
-               format(result$objval, scientific = F, digits = 10))
-  send_note_if(msg, !quietly, message)  # Print status of program if !quietly
+  msg <- paste(
+    "Status of IQR program:",
+    result$status,
+    "| Objective:",
+    format(result$objval, scientific = F, digits = 10)
+  )
+  send_note_if(msg, !quietly, message) # Print status of program if !quietly
 
   out$iqr <- iqr
   out$params <- params
@@ -680,21 +802,29 @@ iqr_milp <- function(Y,
     }
     if (p_Phi > 0) {
       out$beta_Phi_plus <- answer[(p_X + 1):(p_X + p_Phi)]
-      out$beta_Phi_minus <- answer[(p_X + p_Phi + 1):(p_X + 2*p_Phi)]
+      out$beta_Phi_minus <- answer[(p_X + p_Phi + 1):(p_X + 2 * p_Phi)]
     } else {
       out$beta_Phi_plus <- NA
       out$beta_Phi_minus <- NA
     }
     if (p_D > 0) {
-      out$beta_D <- answer[(p_X + 2*p_Phi + 1):(p_X + 2*p_Phi + p_D)]
+      out$beta_D <- answer[(p_X + 2 * p_Phi + 1):(p_X + 2 * p_Phi + p_D)]
     } else {
       out$beta_D <- NA
     }
-    out$u <- answer[(p_X + 2*p_Phi + p_D + 1):(p_X + 2*p_Phi + p_D + n)]
-    out$v <- answer[(p_X + 2*p_Phi + p_D + n + 1):(p_X + 2*p_Phi + p_D + 2*n)]
-    out$a <- answer[(p_X + 2*p_Phi + p_D + 2*n + 1):(p_X + 2*p_Phi + p_D + 3*n)]
-    out$k <- answer[(p_X + 2*p_Phi + p_D + 3*n + 1):(p_X + 2*p_Phi + p_D + 4*n)]
-    out$l <- answer[(p_X + 2*p_Phi + p_D + 4*n + 1):(p_X + 2*p_Phi + p_D + 5*n)]
+    out$u <- answer[(p_X + 2 * p_Phi + p_D + 1):(p_X + 2 * p_Phi + p_D + n)]
+    out$v <- answer[
+      (p_X + 2 * p_Phi + p_D + n + 1):(p_X + 2 * p_Phi + p_D + 2 * n)
+    ]
+    out$a <- answer[
+      (p_X + 2 * p_Phi + p_D + 2 * n + 1):(p_X + 2 * p_Phi + p_D + 3 * n)
+    ]
+    out$k <- answer[
+      (p_X + 2 * p_Phi + p_D + 3 * n + 1):(p_X + 2 * p_Phi + p_D + 4 * n)
+    ]
+    out$l <- answer[
+      (p_X + 2 * p_Phi + p_D + 4 * n + 1):(p_X + 2 * p_Phi + p_D + 5 * n)
+    ]
 
     out$beta_Phi <- out$beta_Phi_plus - out$beta_Phi_minus
     out$resid <- out$u - out$v

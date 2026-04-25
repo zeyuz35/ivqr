@@ -15,7 +15,7 @@ propose_active_basis <- function(residuals, p_design, theta = 1) {
   n <- length(residuals)
   # 1 ball of each color in n urns;
   # probability of picking ball in urn i is equal to weights[i]
-  # returns a vector with 1 if selected and 0 otherwise 
+  # returns a vector with 1 if selected and 0 otherwise
   # DONE: use `rmultinom`
   # draws <- BiasedUrn::rMFNCHypergeo(nran = 1, m = rep(1, n), n = p_design,
   #                                   odds = weights, precision = 1e-7)
@@ -45,7 +45,12 @@ propose_active_basis <- function(residuals, p_design, theta = 1) {
 #'
 #' @return density of Hypergeometric distribution evaluated at
 #'  \code{density_active_basis}
-density_active_basis <- function(active_basis_draws, residuals, p_design, theta = 1) {
+density_active_basis <- function(
+  active_basis_draws,
+  residuals,
+  p_design,
+  theta = 1
+) {
   weights <- exp(-1 * theta * residuals^2)
   # n <- length(residuals)
   # # DONE: replace with product of weights
@@ -80,17 +85,30 @@ density_active_basis <- function(active_basis_draws, residuals, p_design, theta 
 #'      while the columns are each iteration in the MCMC (excluding the burn-in
 #'      period if \code{discard_burnin} is TRUE)
 # TODO: right now, I feed in beta_D to figure out h; maybe I should feed in h to figure out beta_D and beta_X? Also, maybe I should create beta_to_h(beta_D, ...) function
-mcmc_active_basis <- function(iterations,
-                              beta_X, # beta_X IQR point estimates
-                              beta_D, # beta_D from IQR point estimates
-                              Y, X, D, Z, Phi = linear_projection(D, X, Z),
-                              tau,
-                              alpha = 0.1,
-                              theta = 1,
-                              psi = 1, # coefficient on the varcov matrix
-                              varcov_mat = NULL,
-                              discard_burnin = TRUE) {
-  qr <- run_concentrated_qr(beta_D = beta_D, Y = Y, X = X, D = D, Phi = Phi, tau = tau)
+mcmc_active_basis <- function(
+  iterations,
+  beta_X, # beta_X IQR point estimates
+  beta_D, # beta_D from IQR point estimates
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  alpha = 0.1,
+  theta = 1,
+  psi = 1, # coefficient on the varcov matrix
+  varcov_mat = NULL,
+  discard_burnin = TRUE
+) {
+  qr <- run_concentrated_qr(
+    beta_D = beta_D,
+    Y = Y,
+    X = X,
+    D = D,
+    Phi = Phi,
+    tau = tau
+  )
   residuals <- qr$residuals
   dual <- qr$dual
   initial_basis <- which(dual > 0 & dual < 1)
@@ -123,31 +141,50 @@ mcmc_active_basis <- function(iterations,
   h_current <- initial_basis # TODO: refactor `draws` and `h`
   for (i in seq_len(iterations)) {
     u <- u_vec[[i]]
-    h_proposal <- propose_active_basis(residuals, p_design = p_design, theta = theta)
+    h_proposal <- propose_active_basis(
+      residuals,
+      p_design = p_design,
+      theta = theta
+    )
     draws_proposal <- h_proposal$draws
-    beta_proposal_full <- h_to_beta(h = h_proposal$h_star, Y = Y, X = X, D = D, Phi = Phi)
+    beta_proposal_full <- h_to_beta(
+      h = h_proposal$h_star,
+      Y = Y,
+      X = X,
+      D = D,
+      Phi = Phi
+    )
     beta_proposal <- c(beta_proposal_full$beta_D, beta_proposal_full$beta_X)
     result_proposal[[i]] <- beta_proposal
     # TODO: come up with better variable names
-    wald_proposal <- density_wald(beta_hat = beta_hat,
-                                  beta_proposal = beta_proposal,
-                                  varcov_mat)
-    geom_proposal <- density_active_basis(active_basis_draws = draws_proposal,
-                                          residuals = residuals,
-                                          p_design = p_design,
-                                          theta = theta)
+    wald_proposal <- density_wald(
+      beta_hat = beta_hat,
+      beta_proposal = beta_proposal,
+      varcov_mat
+    )
+    geom_proposal <- density_active_basis(
+      active_basis_draws = draws_proposal,
+      residuals = residuals,
+      p_design = p_design,
+      theta = theta
+    )
     if (i == 1) {
-      wald_current <- density_wald(beta_hat = beta_hat,
-                                   beta_proposal = beta_current,
-                                   varcov_mat)
-      geom_current <- density_active_basis(active_basis_draws = draws_current,
-                                           residuals = residuals,
-                                           p_design = p_design,
-                                           theta = theta)
+      wald_current <- density_wald(
+        beta_hat = beta_hat,
+        beta_proposal = beta_current,
+        varcov_mat
+      )
+      geom_current <- density_active_basis(
+        active_basis_draws = draws_current,
+        residuals = residuals,
+        p_design = p_design,
+        theta = theta
+      )
     }
     accept_record[[i]] <- 0
     a <- wald_proposal / wald_current * geom_current / geom_proposal
-    if (u < a) { # accept
+    if (u < a) {
+      # accept
       beta_current <- beta_proposal
       draws_current <- draws_proposal
       h_current <- h_proposal$h_star
@@ -161,9 +198,15 @@ mcmc_active_basis <- function(iterations,
   }
   # each row is a coefficient, each column is one iteration of MCMC
   result_df <- do.call(cbind, result)
-  rownames(result_df) <- c(paste0("beta_D", seq_len(ncol(D))), paste0("beta_X", seq_len(ncol(X))))
+  rownames(result_df) <- c(
+    paste0("beta_D", seq_len(ncol(D))),
+    paste0("beta_X", seq_len(ncol(X)))
+  )
   result_proposal_df <- do.call(cbind, result_proposal)
-  rownames(result_df) <- c(paste0("beta_D", seq_len(ncol(D))), paste0("beta_X", seq_len(ncol(X))))
+  rownames(result_df) <- c(
+    paste0("beta_D", seq_len(ncol(D))),
+    paste0("beta_X", seq_len(ncol(X)))
+  )
   result_h_df <- do.call(cbind, result_h)
   if (discard_burnin) {
     # find where stationary distribution begins
@@ -172,8 +215,18 @@ mcmc_active_basis <- function(iterations,
     result_df <- result_df[, stationary_begin:ncol(result_df)]
     result_h_df <- result_h_df[, stationary_begin:ncol(result_h_df)]
     result_prob <- result_prob[stationary_begin:length(result_prob)]
-    result_proposal_df <- result_proposal_df[, stationary_begin:ncol(result_proposal_df)]
-    accept_record <- unlist(accept_record)[stationary_begin:length(accept_record)]
+    result_proposal_df <- result_proposal_df[,
+      stationary_begin:ncol(result_proposal_df)
+    ]
+    accept_record <- unlist(accept_record)[
+      stationary_begin:length(accept_record)
+    ]
   }
-  list("beta" = result_df, "h" = result_h_df, "prob" = result_prob, "beta_proposal" = result_proposal_df, "accept_record" = accept_record)
+  list(
+    "beta" = result_df,
+    "h" = result_h_df,
+    "prob" = result_prob,
+    "beta_proposal" = result_proposal_df,
+    "accept_record" = accept_record
+  )
 }

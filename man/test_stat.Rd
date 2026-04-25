@@ -19,6 +19,8 @@ test_stat(
   homoskedasticity = FALSE,
   a_hat = NULL,
   residuals = NULL,
+  weights = NULL,
+  solver = c("gurobi", "highs"),
   kernel = "Powell",
   show_progress = TRUE,
   print_results = TRUE,
@@ -67,6 +69,13 @@ dual-variables from short-iqr regression}
 
 \item{residuals}{Residuals from IQR MILP program; if NULL (default), use
 residuals from short-iqr regression}
+
+\item{weights}{vector of observation weights; if supplied, the algorithm fits
+to minimize the sum of the weights multiplied into the absolute residuals.
+The length of weights must be the same as the number of observations.
+The weights must be nonnegative.}
+
+\item{solver}{Choice of solver: "gurobi" (default) or "highs"}
 
 \item{kernel}{Only active if \code{homoskedasticity} is FALSE; either
 "Powell" (default) to use the Powell estimator or

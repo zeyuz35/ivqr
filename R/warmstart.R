@@ -41,13 +41,15 @@
 #'
 #' @return Either NULL or a vector of values to warm-start the program; the
 #'  output is meant to be fed into the \code{start} parameter of \code{iqr_milp}
-compute_warmstart <- function(Y,
-                              X,
-                              D,
-                              Z,
-                              Phi = linear_projection(D, X, Z),
-                              tau,
-                              method = NULL) {
+compute_warmstart <- function(
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  method = NULL
+) {
   n <- nrow(Y)
   if (is.null(method)) {
     NULL
@@ -82,8 +84,17 @@ compute_warmstart <- function(Y,
       l[resid_minus > 0] <- 1
       k[resid_plus == 0 & resid_minus == 0] <- 0 # resid = 0 => a \in (0, 1)
       l[resid_plus == 0 & resid_minus == 0] <- 0 # resid = 0 => a \in (0, 1)
-      start <- c(beta_X, beta_Phi_plus, beta_Phi_minus, beta_D,
-                 resid_plus, resid_minus, dual, k, l)
+      start <- c(
+        beta_X,
+        beta_Phi_plus,
+        beta_Phi_minus,
+        beta_D,
+        resid_plus,
+        resid_minus,
+        dual,
+        k,
+        l
+      )
     }
     start
   } else {

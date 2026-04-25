@@ -24,13 +24,12 @@ Z <- cbind(Z1, Z2, Z3)
 
 ### Create shocks and errors -------------------------
 
-Sigma <- matrix(c(1, 0.4, 0.6, -0.2,
-                  0.4, 1, 0, 0,
-                  0.6, 0, 1, 0,
-                  -0.2, 0, 0, 1),
-                nrow = 4,
-                ncol = 4,
-                byrow = TRUE)
+Sigma <- matrix(
+  c(1, 0.4, 0.6, -0.2, 0.4, 1, 0, 0, 0.6, 0, 1, 0, -0.2, 0, 0, 1),
+  nrow = 4,
+  ncol = 4,
+  byrow = TRUE
+)
 EpsV1V2V3 <- mvrnorm(n, mu = c(0, 0, 0, 0), Sigma = 0.25 * Sigma)
 
 ### Create endogeneous variables -------------------------

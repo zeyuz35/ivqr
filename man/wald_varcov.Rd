@@ -12,7 +12,8 @@ wald_varcov(
   X,
   Z,
   Phi = linear_projection(D, X, Z),
-  psi = 1
+  psi = 1,
+  weights = NULL
 )
 }
 \arguments{
@@ -36,6 +37,11 @@ of D on X and Z}
 \item{psi}{Scalar coefficient in front of the variance-covariance matrix;
 useful for tuning MCMC subsampling (see \code{mcmc_active_basis}); defaults
 to 1}
+
+\item{weights}{vector of observation weights; if supplied, the algorithm fits
+to minimize the sum of the weights multiplied into the absolute residuals.
+The length of weights must be the same as the number of observations.
+The weights must be nonnegative.}
 }
 \value{
 Named list

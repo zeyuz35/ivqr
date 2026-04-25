@@ -25,6 +25,10 @@
 #' @param psi Scalar coefficient in front of the variance-covariance matrix;
 #'  useful for tuning MCMC subsampling (see \code{mcmc_active_basis}); defaults
 #'  to 1
+#' @param weights vector of observation weights; if supplied, the algorithm fits
+#'  to minimize the sum of the weights multiplied into the absolute residuals.
+#'  The length of weights must be the same as the number of observations.
+#'  The weights must be nonnegative.
 #'
 #' @return Named list
 #'  \enumerate{
@@ -32,15 +36,17 @@
 #'    \item \code{hs}: Hall and Sheather Bandwidth
 #'    \item Other objects used to create varcov
 #'  }
-wald_varcov <- function(resid,
-                        alpha,
-                        tau,
-                        D,
-                        X,
-                        Z,
-                        Phi = linear_projection(D, X, Z),
-                        psi = 1) {
-
+wald_varcov <- function(
+  resid,
+  alpha,
+  tau,
+  D,
+  X,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  psi = 1,
+  weights = NULL
+) {
   out <- list() # initialize list of results to return
 
   # Get dimensions of data
@@ -50,16 +56,21 @@ wald_varcov <- function(resid,
   stopifnot(nrow(X) == n) # TODO: remove this to improve speed
   stopifnot(nrow(Phi) == n) # TODO: remove this to improve speed
 
+  if (!is.null(weights)) {
+    stopifnot(length(weights) == n)
+    stopifnot(all(weights >= 0))
+  }
+
   # Matrices
   B <- cbind(Phi, X)
   C <- cbind(D, X)
 
   # Hall and Sheather (1988) bandwidth
-  tmp_a <- n ^ (1 / 3)
-  tmp_b <- stats::qnorm(1 - 0.5 * alpha) ^ (2 / 3)
-  tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau)) ^ 2)
-  tmp_d <- 2 * (stats::qnorm(tau) ^ 2) + 1
-  hs <- tmp_a * tmp_b * ((tmp_c / tmp_d) ^ (1 / 3))
+  tmp_a <- n^(1 / 3)
+  tmp_b <- stats::qnorm(1 - 0.5 * alpha)^(2 / 3)
+  tmp_c <- 1.5 * (stats::dnorm(stats::qnorm(tau))^2)
+  tmp_d <- 2 * (stats::qnorm(tau)^2) + 1
+  hs <- tmp_a * tmp_b * ((tmp_c / tmp_d)^(1 / 3))
   out$hs <- hs
   # Powell
   bw <- hs
@@ -68,9 +79,18 @@ wald_varcov <- function(resid,
   out$Psi <- Psi
 
   # Find S and J in formula (3.11) of CH (2006)
-  S <- tau * (1 - tau) / n * t(B) %*% B # note that the 'n' will be negated
-  J <- 1 / (2 * n * bw) * t(B) %*% Psi %*% C # note that the 'n' will be negated
-  varcov <- 1 / n * solve(J) %*% S %*% t(solve(J)) # variance of estimator
+  if (!is.null(weights)) {
+    W2 <- weights^2
+    B_W2 <- sweep(B, 1, W2, "*")
+    S <- tau * (1 - tau) / n * t(B_W2) %*% B
+    W_Psi <- Psi * weights
+    J <- 1 / (2 * n * bw) * t(B) %*% W_Psi %*% C
+  } else {
+    S <- tau * (1 - tau) / n * t(B) %*% B # note that the 'n' will be negated
+    J <- 1 / (2 * n * bw) * t(B) %*% Psi %*% C # note that the 'n' will be negated
+  }
+
+  varcov <- solve(J) %*% S %*% t(solve(J)) # variance of estimator
   out$S <- S
   out$J <- J
   out$psi <- psi
@@ -106,18 +126,24 @@ wald_varcov <- function(resid,
 #'  of D on X and Z
 #' @param psi Scalar coefficient in front of the variance-covariance matrix;
 #'  useful for tuning MCMC subsampling (see \code{mcmc_active_basis}); defaults to 1
-wald_univariate <- function(center,
-                            endogeneous,
-                            index,
-                            resid,
-                            alpha = 0.1,
-                            tau,
-                            D,
-                            X,
-                            Z,
-                            Phi = linear_projection(D, X, Z),
-                            psi = 1) {
-
+#' @param weights vector of observation weights; if supplied, the algorithm fits
+#'  to minimize the sum of the weights multiplied into the absolute residuals.
+#'  The length of weights must be the same as the number of observations.
+#'  The weights must be nonnegative.
+wald_univariate <- function(
+  center,
+  endogeneous,
+  index,
+  resid,
+  alpha = 0.1,
+  tau,
+  D,
+  X,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  psi = 1,
+  weights = NULL
+) {
   start_clock <- Sys.time()
   out <- list() # initialize list of results to return
 
@@ -132,14 +158,17 @@ wald_univariate <- function(center,
   crit_val <- stats::qnorm(1 - alpha / 2)
   out$crit_val <- crit_val
 
-  varcov_result <- wald_varcov(resid = resid,
-                               alpha = alpha,
-                               tau,
-                               D = D,
-                               X = X,
-                               Z = Z,
-                               psi = psi,
-                               Phi = Phi)
+  varcov_result <- wald_varcov(
+    resid = resid,
+    alpha = alpha,
+    tau,
+    D = D,
+    X = X,
+    Z = Z,
+    psi = psi,
+    Phi = Phi,
+    weights = weights
+  )
   out$varcov_result <- varcov_result
   varcov <- varcov_result$varcov
   out$varcov <- varcov

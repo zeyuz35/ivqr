@@ -9,7 +9,8 @@
 # tmp$center # should be roughly m/n = 1/2
 # Q: The log variant of the program showing up as infeasible. Why?
 find_center_subsample_polytope <- function(
-  n, m,
+  n,
+  m,
   gencontype = "power",
   a = ifelse(gencontype == "power", 0.5, exp(1)),
   params = list()
@@ -29,11 +30,13 @@ find_center_subsample_polytope <- function(
   slack_i <- diag(1, length(vertices_i))
   zero_mat <- diag(0, length(vertices_i))
   dv_i <- do.call("rbind", rep(list(diag(1, nrow = n)), length = num_vertices))
-  define_slack <- cbind(dv_i,      # coordinates of center
-                        -slack_i,  # positive part of slack
-                        slack_i,   # negative part of slack
-                        zero_mat,  # f(pos slack), where f = sqrt by default
-                        zero_mat)  # f(neg slack), where f = sqrt by default
+  define_slack <- cbind(
+    dv_i, # coordinates of center
+    -slack_i, # positive part of slack
+    slack_i, # negative part of slack
+    zero_mat, # f(pos slack), where f = sqrt by default
+    zero_mat
+  ) # f(neg slack), where f = sqrt by default
   num_decision_vars <- ncol(define_slack)
 
   sum_A <- c(rep(1, n), rep(0, num_decision_vars - n))
@@ -126,7 +129,11 @@ find_center_subsample_polytope <- function(
 # TODO: code up improved linear program to find DC (ask GP for the note)
 find_subsample_in_polytope <- function(
   h,
-  Y, X, D, Z, Phi = linear_projection(D, X, Z),
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
   tau,
   beta_D_proposal = NULL,
   beta_X_proposal = NULL,
@@ -134,7 +141,6 @@ find_subsample_in_polytope <- function(
   params = list(OutputFlag = 0),
   type = "C"
 ) {
-
   n <- nrow(Y)
   p <- length(h)
 
@@ -231,9 +237,13 @@ find_subsample_in_polytope <- function(
   xi_rhs <- rep(0, num_xi)
 
   # sum of omega
-  omega_A <- matrix(c(
-    rep(1, num_omega), rep(0, num_decision_vars - num_omega)
-  ), nrow = 1)
+  omega_A <- matrix(
+    c(
+      rep(1, num_omega),
+      rep(0, num_decision_vars - num_omega)
+    ),
+    nrow = 1
+  )
   omega_sense <- "="
   omega_rhs <- subsample_size - p
 
@@ -263,7 +273,9 @@ find_subsample_in_polytope <- function(
     # NOTE: `rank` works better than `order` when there are ties
     max_indices <- rank(-omega, ties.method = "random") # 1 = largest
     # switch the largest numbers that aren't 1
-    switch <- which(max_indices <= current_sum + remaining & max_indices > current_sum)
+    switch <- which(
+      max_indices <= current_sum + remaining & max_indices > current_sum
+    )
     omega_mod <- omega
     omega_mod[switch] <- 1
     omega_mod[which(omega_mod < 1)] <- 0
@@ -288,7 +300,11 @@ find_subsample_in_polytope <- function(
 # TODO: document
 find_chebyschev_center <- function(
   h,
-  Y, X, D, Z, Phi = linear_projection(D, X, Z),
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
   tau,
   beta_D_proposal = NULL,
   beta_X_proposal = NULL,
@@ -297,7 +313,6 @@ find_chebyschev_center <- function(
   type = "C",
   l_norm = 2
 ) {
-
   n <- nrow(Y)
   p <- length(h)
 
@@ -356,9 +371,13 @@ find_chebyschev_center <- function(
   )
 
   # sum of omega
-  omega_A <- matrix(c(
-    rep(1, num_omega), rep(0, num_decision_vars - num_omega)
-  ), nrow = 1)
+  omega_A <- matrix(
+    c(
+      rep(1, num_omega),
+      rep(0, num_decision_vars - num_omega)
+    ),
+    nrow = 1
+  )
   omega_sense <- "="
   omega_rhs <- subsample_size - p
 
@@ -367,7 +386,7 @@ find_chebyschev_center <- function(
   left_A <- vector("list", p)
   for (j in seq_len(p)) {
     xi_j <- xi_mat[j, ]
-    xi_j_norm <- sum(abs(xi_j)^l_norm) ^ (1 / l_norm)
+    xi_j_norm <- sum(abs(xi_j)^l_norm)^(1 / l_norm)
     right_A[[j]] <- c(xi_mat[j, ], xi_j_norm)
     left_A[[j]] <- c(-xi_mat[j, ], xi_j_norm)
   }
@@ -375,7 +394,7 @@ find_chebyschev_center <- function(
   left_A <- do.call(rbind, left_A)
   foc_A <- rbind(right_A, left_A)
   foc_sense <- rep("<=", 2 * p)
-  foc_rhs <- c(rep(1-tau, p), rep(tau, p))
+  foc_rhs <- c(rep(1 - tau, p), rep(tau, p))
 
   # constraints
   model$A <- rbind(omega_A, foc_A)
@@ -405,7 +424,9 @@ find_chebyschev_center <- function(
     # NOTE: `rank` works better than `order` when there are ties
     max_indices <- rank(-omega, ties.method = "random") # 1 = largest
     # switch the largest numbers that aren't 1
-    switch <- which(max_indices <= current_sum + remaining & max_indices > current_sum)
+    switch <- which(
+      max_indices <= current_sum + remaining & max_indices > current_sum
+    )
     omega_mod <- omega
     omega_mod[switch] <- 1
     omega_mod[which(omega_mod < 1)] <- 0
@@ -430,7 +451,11 @@ find_chebyschev_center <- function(
 # TODO: document
 find_center_repellent <- function(
   h,
-  Y, X, D, Z, Phi = linear_projection(D, X, Z),
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
   tau,
   beta_D_proposal = NULL,
   beta_X_proposal = NULL,
@@ -442,12 +467,13 @@ find_center_repellent <- function(
   simplex_repel = TRUE, # repel away from facets of the simplex
   foc_repel = TRUE # repel away from the FOC conditions
 ) {
-
   n <- nrow(Y)
   p <- length(h)
 
   if (!simplex_repel & !foc_repel) {
-    stop("At least one of `foc_repel` and `simplex_repel` must be TRUE. Both can't be false.")
+    stop(
+      "At least one of `foc_repel` and `simplex_repel` must be TRUE. Both can't be false."
+    )
   }
   if (simplex_repel & ((n - p) - 1) <= 0) {
     stop("facet_center denominator must be positive i.e. we need n - p - 1 > 0")
@@ -455,7 +481,11 @@ find_center_repellent <- function(
 
   xi_mat <- compute_xi_i(
     h = h,
-    Y = Y, X = X, D = D, Z = Z, Phi = Phi,
+    Y = Y,
+    X = X,
+    D = D,
+    Z = Z,
+    Phi = Phi,
     tau = tau,
     beta_D_proposal = beta_D_proposal,
     beta_X_proposal = beta_X_proposal
@@ -479,9 +509,13 @@ find_center_repellent <- function(
   num_left_slack_transform <- num_left_slack
   num_simplex_slack <- 2 * (n - p)
   num_simplex_slack_transform <- 2 * (n - p)
-  num_decision_vars <- num_omega + num_right_slack + num_left_slack +
-    num_right_slack_transform + num_left_slack_transform +
-    num_simplex_slack + num_simplex_slack_transform
+  num_decision_vars <- num_omega +
+    num_right_slack +
+    num_left_slack +
+    num_right_slack_transform +
+    num_left_slack_transform +
+    num_simplex_slack +
+    num_simplex_slack_transform
 
   model <- list()
   model$modelsense <- ifelse(gencontype == "max", "min", "max")
@@ -513,9 +547,13 @@ find_center_repellent <- function(
   )
 
   # sum of omega
-  omega_A <- matrix(c(
-    rep(1, num_omega), rep(0, num_decision_vars - num_omega)
-  ), nrow = 1)
+  omega_A <- matrix(
+    c(
+      rep(1, num_omega),
+      rep(0, num_decision_vars - num_omega)
+    ),
+    nrow = 1
+  )
   omega_sense <- "="
   omega_rhs <- subsample_size - p
 
@@ -534,8 +572,11 @@ find_center_repellent <- function(
   left_A <- do.call(rbind, left_A)
   foc_A <- rbind(right_A, left_A)
   foc_A <- expand_matrix(
-    foc_A, newrow = nrow(foc_A), newcol = num_decision_vars,
-    row_direction = "bottom", col_direction = "right"
+    foc_A,
+    newrow = nrow(foc_A),
+    newcol = num_decision_vars,
+    row_direction = "bottom",
+    col_direction = "right"
   )
   foc_sense <- rep("=", 2 * p)
   foc_rhs <- c(rep(1 - tau, p), rep(tau, p))
@@ -543,7 +584,10 @@ find_center_repellent <- function(
   # transform FOC slack variables
   xstart <- num_omega
   ystart <- xstart + num_right_slack + num_left_slack
-  foc_gencon <- vector("list", num_left_slack_transform + num_right_slack_transform)
+  foc_gencon <- vector(
+    "list",
+    num_left_slack_transform + num_right_slack_transform
+  )
   for (j in seq_len(2 * p)) {
     yvar <- ystart + j
     xvar <- xstart + j
@@ -563,7 +607,11 @@ find_center_repellent <- function(
       e_ij <- rep(0, num_simplex_slack)
       e_ij[[counter]] <- 1
       facet_center <- rep(
-        ifelse(j == 0, (subsample_size - p) / ((n - p) - 1), ((subsample_size - p) - 1) / ((n - p) - 1)),
+        ifelse(
+          j == 0,
+          (subsample_size - p) / ((n - p) - 1),
+          ((subsample_size - p) - 1) / ((n - p) - 1)
+        ),
         n - p
       )
       facet_center[i] <- j
@@ -577,8 +625,13 @@ find_center_repellent <- function(
       # }
       simplex_lhs[[counter]] <- c(
         -normal_unit, # num_omega
-        rep(0, num_left_slack + num_right_slack +
-            num_left_slack_transform + num_right_slack_transform),
+        rep(
+          0,
+          num_left_slack +
+            num_right_slack +
+            num_left_slack_transform +
+            num_right_slack_transform
+        ),
         e_ij, # num_simplex_slack
         rep(0, num_simplex_slack_transform) # num_simplex_slack_transform
       )
@@ -590,8 +643,11 @@ find_center_repellent <- function(
   simplex_sense <- rep("=", num_simplex_slack)
 
   # transform simplex slack variables
-  xstart <- num_omega + num_left_slack + num_right_slack +
-    num_left_slack_transform + num_right_slack_transform
+  xstart <- num_omega +
+    num_left_slack +
+    num_right_slack +
+    num_left_slack_transform +
+    num_right_slack_transform
   ystart <- xstart + num_simplex_slack
   simplex_gencon <- vector("list", num_simplex_slack_transform)
   for (j in seq_len(num_simplex_slack_transform)) {
@@ -613,15 +669,19 @@ find_center_repellent <- function(
     model$ub <- c(model$ub, Inf)
     model$vtype <- c(model$vtype, "C")
 
-
     # max >= slack => -slack + max >= 0
     foc_slack_tmp <- diag(-1, num_right_slack + num_left_slack)
     max_foc_slack <- cbind(
       matrix(0, nrow = nrow(foc_slack_tmp), ncol = num_omega),
       foc_slack_tmp,
-      matrix(0, nrow = nrow(foc_slack_tmp), ncol = num_right_slack_transform +
-        num_left_slack_transform + num_simplex_slack +
-        num_simplex_slack_transform),
+      matrix(
+        0,
+        nrow = nrow(foc_slack_tmp),
+        ncol = num_right_slack_transform +
+          num_left_slack_transform +
+          num_simplex_slack +
+          num_simplex_slack_transform
+      ),
       rep(1, length = nrow(foc_slack_tmp))
     )
     max_foc_slack_sense <- rep(">=", length = nrow(foc_slack_tmp))
@@ -629,11 +689,21 @@ find_center_repellent <- function(
 
     simplex_slack_tmp <- diag(-1, num_simplex_slack_transform)
     max_simplex_slack <- cbind(
-      matrix(0, nrow = nrow(simplex_slack_tmp), ncol = num_omega +
-        num_right_slack + num_left_slack + num_right_slack_transform +
-        num_left_slack_transform),
+      matrix(
+        0,
+        nrow = nrow(simplex_slack_tmp),
+        ncol = num_omega +
+          num_right_slack +
+          num_left_slack +
+          num_right_slack_transform +
+          num_left_slack_transform
+      ),
       simplex_slack_tmp,
-      matrix(0, nrow = nrow(simplex_slack_tmp), ncol = num_simplex_slack_transform),
+      matrix(
+        0,
+        nrow = nrow(simplex_slack_tmp),
+        ncol = num_simplex_slack_transform
+      ),
       rep(1, length = nrow(simplex_slack_tmp))
     )
     max_simplex_slack_sense <- rep(">=", length = nrow(simplex_slack_tmp))
@@ -656,7 +726,8 @@ find_center_repellent <- function(
   model$rhs <- c(omega_rhs, foc_rhs, simplex_rhs)
   gencon <- append(foc_gencon, simplex_gencon)
 
-  if (!foc_repel) { # no foc, only simplex
+  if (!foc_repel) {
+    # no foc, only simplex
     model$A <- rbind(omega_A, simplex_A, max_simplex_slack)
     model$sense <- c(omega_sense, simplex_sense, max_simplex_slack_sense)
     model$rhs <- c(omega_rhs, simplex_rhs, max_simplex_slack_rhs)
@@ -677,7 +748,8 @@ find_center_repellent <- function(
       )
     }
   }
-  if (!simplex_repel) { # no simplex, only foc
+  if (!simplex_repel) {
+    # no simplex, only foc
     model$A <- rbind(omega_A, foc_A, max_foc_slack)
     model$sense <- c(omega_sense, foc_sense, max_foc_slack_sense)
     model$rhs <- c(omega_rhs, foc_rhs, max_foc_slack_rhs)
@@ -728,7 +800,9 @@ find_center_repellent <- function(
     # NOTE: `rank` works better than `order` when there are ties
     max_indices <- rank(-omega, ties.method = "random") # 1 = largest
     # switch the largest numbers that aren't 1
-    switch <- which(max_indices <= current_sum + remaining & max_indices > current_sum)
+    switch <- which(
+      max_indices <= current_sum + remaining & max_indices > current_sum
+    )
     omega_mod <- omega
     omega_mod[switch] <- 1
     omega_mod[which(omega_mod < 1)] <- 0

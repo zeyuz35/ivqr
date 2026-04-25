@@ -85,6 +85,11 @@
 #'  initial test-statistic; defaults to Inf (scalar)
 #' @param save_log If TRUE, save log files from Gurobi programs in
 #' \code{log_dir}; defaults to FALSE (boolean)
+#' @param weights vector of observation weights; if supplied, the algorithm fits
+#'  to minimize the sum of the weights multiplied into the absolute residuals.
+#'  The length of weights must be the same as the number of observations.
+#'  The weights must be nonnegative.
+#' @param solver Choice of solver: "gurobi" (default) or "highs"
 #' @inheritParams test_stat
 #'
 #' @import foreach
@@ -93,38 +98,41 @@
 #' @importFrom stats coef
 #'
 #' @export
-line_confint_interpolation <- function(index,
-                                       endogeneous = TRUE,
-                                       beta_null = NULL,
-                                       stopping_tolerance = NULL,
-                                       width_ratio = 1,
-                                       step_rate = 0.5,
-                                       cores = 2,
-                                       log_dir = NULL,
-                                       log_name = "line_search.csv",
-                                       remove_intermediate_csvs = FALSE,
-                                       return_setup = FALSE,
-                                       p_val_tol = 1e-6,
-                                       small_change_count_tol = 10,
-                                       alpha = 0.1,
-                                       Y,
-                                       X,
-                                       D,
-                                       Z,
-                                       Phi = linear_projection(D, X, Z),
-                                       tau,
-                                       B = NULL,
-                                       orthogonalize_statistic = FALSE,
-                                       homoskedasticity = FALSE,
-                                       kernel = "Powell",
-                                       residuals = NULL,
-                                       show_progress = TRUE,
-                                       # FUN = preprocess_iqr_milp,
-                                       initial_TimeLimit = NULL,
-                                       initial_globalTimeLimit = Inf,
-                                       save_log = FALSE,
-                                       ...) {
-
+line_confint_interpolation <- function(
+  index,
+  endogeneous = TRUE,
+  beta_null = NULL,
+  stopping_tolerance = NULL,
+  width_ratio = 1,
+  step_rate = 0.5,
+  cores = 2,
+  log_dir = NULL,
+  log_name = "line_search.csv",
+  remove_intermediate_csvs = FALSE,
+  return_setup = FALSE,
+  p_val_tol = 1e-6,
+  small_change_count_tol = 10,
+  alpha = 0.1,
+  Y,
+  X,
+  D,
+  Z,
+  Phi = linear_projection(D, X, Z),
+  tau,
+  B = NULL,
+  orthogonalize_statistic = FALSE,
+  homoskedasticity = FALSE,
+  kernel = "Powell",
+  residuals = NULL,
+  weights = NULL,
+  solver = c("gurobi", "highs"),
+  show_progress = TRUE,
+  # FUN = preprocess_iqr_milp,
+  initial_TimeLimit = NULL,
+  initial_globalTimeLimit = Inf,
+  save_log = FALSE,
+  ...
+) {
   ### Prep -------------------------
 
   # Start clock
@@ -182,13 +190,22 @@ line_confint_interpolation <- function(index,
   if (!is.null(log_dir)) {
     # create path of log file
     # note that date and time will be prepended: yymmdd_hhmmss
-    stub <- paste0("index", index, "_", ifelse(endogeneous, "endo", "exo"),
-                   "_tau", tau,
-                   "_kernel", ifelse(homoskedasticity, "homoskedasticity", kernel))
+    stub <- paste0(
+      "index",
+      index,
+      "_",
+      ifelse(endogeneous, "endo", "exo"),
+      "_tau",
+      tau,
+      "_kernel",
+      ifelse(homoskedasticity, "homoskedasticity", kernel)
+    )
     log_path <- paste0(log_dir, "/", date_time, "_", stub, "_", log_name)
     if (file.exists(log_path)) {
-      msg <- paste(log_path,
-                   "already exists. Choose a different `log_name` or `log_dir`")
+      msg <- paste(
+        log_path,
+        "already exists. Choose a different `log_name` or `log_dir`"
+      )
       stop(msg)
     } else {
       create_log <- TRUE
@@ -232,8 +249,11 @@ line_confint_interpolation <- function(index,
   send_note_if(paste0("left bound: ", bounds[1]), show_progress, message)
   send_note_if(paste0("right bound: ", bounds[2]), show_progress, message)
   send_note_if(paste0("width: ", width), show_progress, message)
-  send_note_if(paste0("stopping tolerance: ", stopping_tolerance),
-               show_progress, message)
+  send_note_if(
+    paste0("stopping tolerance: ", stopping_tolerance),
+    show_progress,
+    message
+  )
 
   if (return_setup) {
     return(out)
@@ -268,11 +288,15 @@ line_confint_interpolation <- function(index,
     kernel = kernel,
     show_progress = show_progress,
     residuals = residuals,
+    weights = weights,
+    solver = solver,
     TimeLimit = initial_TimeLimit,
     globalTimeLimit = initial_globalTimeLimit,
-    LogFileName = ifelse(save_log,
-                         paste0(log_dir, "/", date_time, "_initialTestStat"),
-                         ""),
+    LogFileName = ifelse(
+      save_log,
+      paste0(log_dir, "/", date_time, "_initialTestStat"),
+      ""
+    ),
     # FUN = FUN, # TODO: allow user to choose between preprocess_iqr_milp and iqr_milp
     ...
   )
@@ -341,11 +365,15 @@ line_confint_interpolation <- function(index,
     kernel = kernel,
     show_progress = show_progress,
     residuals = residuals,
+    weights = weights,
+    solver = solver,
     TimeLimit = initial_TimeLimit,
     globalTimeLimit = initial_globalTimeLimit,
-    LogFileName = ifelse(save_log,
-                         paste0(log_dir, "/", date_time, "_initialTestStat"),
-                         ""),
+    LogFileName = ifelse(
+      save_log,
+      paste0(log_dir, "/", date_time, "_initialTestStat"),
+      ""
+    ),
     # FUN = FUN, # TODO: allow user to choose between preprocess_iqr_milp and iqr_milp
     ...
   )
@@ -379,11 +407,15 @@ line_confint_interpolation <- function(index,
     kernel = kernel,
     show_progress = show_progress,
     residuals = residuals,
+    weights = weights,
+    solver = solver,
     TimeLimit = initial_TimeLimit,
     globalTimeLimit = initial_globalTimeLimit,
-    LogFileName = ifelse(save_log,
-                         paste0(log_dir, "/", date_time, "_initialTestStat"),
-                         ""),
+    LogFileName = ifelse(
+      save_log,
+      paste0(log_dir, "/", date_time, "_initialTestStat"),
+      ""
+    ),
     # FUN = FUN, # TODO: allow user to choose between preprocess_iqr_milp and iqr_milp
     ...
   )
@@ -396,7 +428,11 @@ line_confint_interpolation <- function(index,
   # interpolation of left_test_stat, right_test_stat, and initial_test_stat
   interpolation_data <- data.frame(
     x = c(beta_null, left_beta, right_beta),
-    y = c(initial_test_stat$test_stat, left_test_stat$test_stat, right_test_stat$test_stat)
+    y = c(
+      initial_test_stat$test_stat,
+      left_test_stat$test_stat,
+      right_test_stat$test_stat
+    )
   )
   reg <- stats::lm(y ~ x, data = interpolation_data)
   reg_coeffs <- stats::coef(reg)
@@ -449,11 +485,15 @@ line_confint_interpolation <- function(index,
     kernel = kernel,
     show_progress = show_progress,
     residuals = residuals,
+    weights = weights,
+    solver = solver,
     TimeLimit = initial_TimeLimit,
     globalTimeLimit = initial_globalTimeLimit,
-    LogFileName = ifelse(save_log,
-                         paste0(log_dir, "/", date_time, "_minBetaCandidate"),
-                         ""),
+    LogFileName = ifelse(
+      save_log,
+      paste0(log_dir, "/", date_time, "_minBetaCandidate"),
+      ""
+    ),
     # FUN = FUN, # TODO: allow user to choose between preprocess_iqr_milp and iqr_milp
     ...
   )
@@ -517,11 +557,15 @@ line_confint_interpolation <- function(index,
     kernel = kernel,
     show_progress = show_progress,
     residuals = residuals,
+    weights = weights,
+    solver = solver,
     TimeLimit = initial_TimeLimit,
     globalTimeLimit = initial_globalTimeLimit,
-    LogFileName = ifelse(save_log,
-                         paste0(log_dir, "/", date_time, "_maxBetaCandidate"),
-                         ""),
+    LogFileName = ifelse(
+      save_log,
+      paste0(log_dir, "/", date_time, "_maxBetaCandidate"),
+      ""
+    ),
     # FUN = FUN, # TODO: allow user to choose between preprocess_iqr_milp and iqr_milp
     ...
   )
@@ -568,197 +612,251 @@ line_confint_interpolation <- function(index,
 
   # set up cluster
   out$cores <- cores
-  cl <- parallel::makeCluster(cores, outfile = paste0(log_dir, "/", date_time, "_outfile.txt")) # TODO: let user decide where and when to save the outfile
+  cl <- parallel::makeCluster(
+    cores,
+    outfile = paste0(log_dir, "/", date_time, "_outfile.txt")
+  ) # TODO: let user decide where and when to save the outfile
   doParallel::registerDoParallel(cl)
   on.exit(parallel::stopCluster(cl))
-  confint <- foreach (type = c("min", "max"),
-                      .combine = list,
-                      .export = c("test_stat",
-                                  "send_note_if",
-                                  "p_val_interpolation",
-                                  "preprocess_iqr_milp")) %dopar% {
-    # type <- ifelse(direction == 1, "max", "min")
-    step <- ifelse(type == "min", min_step_size, max_step_size) # initial step size
-    direction <- ifelse(type == "min", min_direction, max_direction) # initial direction
-    current_beta <- ifelse(type == "min", min_beta_candidate, max_beta_candidate)
-    beta_D_null <- rep(NA, p_D)
-    beta_X_null <- rep(NA, p_X)
-    current_ts_reject <- ifelse(type == "min", min_test_stat$p_val < alpha, max_test_stat$p_val < alpha)
-    current_p_val <- ifelse(type == "min", min_test_stat$p_val, max_test_stat$p_val)
-    counter <- 0
-    num_skips <- 0
-    small_change_in_p_val <- 0
-    # set the time limit to be 2 * time limit of initial test-stat computation
-    time_limit <- initial_time * 2
-    ts <- list(); ts$ended_early <- NULL # initialize ts$ended_early to be NULL
-    # TODO: stop the while loop if the width of the confidence interval is very large (think about how to present the results)
-    while (step > stopping_tolerance &
-           small_change_in_p_val < small_change_count_tol) {
-      clock_start_while <- Sys.time() # start the clock for current step
-      counter <- counter + 1 # update counter
-      send_note_if(paste("Type & Counter:", type, counter), show_progress, message) # DEBUG: consider removing this
-      old_beta <- current_beta # save previous beta
-      if (!is.null(ts$ended_early)) {
-        message(paste(type, counter, "PREVIOUSLY ENDED EARLY")) # DEBUG: remove later
-        # If the previous test-stat computation ended early, then we'll take a
-        # tiny step in the same direction with a small perturbation and then
-        # continue the line search.
-        # This only applies *after* we try one iteration of the while loop
-        # (else, ts$ended_early is undefined)
-        perturb <- stats::rnorm(1, mean = 0, sd = step / 5)
-        current_beta <- current_beta + step * direction * 0.5 + perturb
-      } else {
-        message(paste(type, counter, "PREVIOUSLY DID NOT END EARLY")) # DEBUG: remove later
-        # If the previous test-stat computation successfully ran, then we'll
-        # take a step in the specified direction and then continue the line
-        # search.
-        old_p_val <- current_p_val # save previous p-value if previous step wasn't skipped
-        old_ts_reject <- current_ts_reject # save previous status of test if previous step wasn't skipped
-        current_beta <- current_beta + step * direction # update beta
-        print(paste("Type:", type, "| Counter:", counter, "| Current Beta:", current_beta))
-      }
-      # construct null
-      if (endogeneous) {
-        beta_D_null[index] <- current_beta
-      } else {
-        beta_X_null[index] <- current_beta
-      }
-      # find test stat
-      ts <- test_stat(
-        beta_D_null = beta_D_null,
-        beta_X_null = beta_X_null,
-        alpha = alpha,
-        Y = Y,
-        X = X,
-        D = D,
-        Z = Z,
-        Phi = Phi,
-        tau = tau,
-        B = B,
-        orthogonalize_statistic = orthogonalize_statistic,
-        homoskedasticity = homoskedasticity,
-        kernel = kernel,
-        show_progress = show_progress,
-        residuals = residuals,
-        TimeLimit = time_limit,
-        globalTimeLimit = time_limit,
-        LogFileName = ifelse(save_log,
-                             paste0(log_dir, "/", date_time, "_", type, "_step", counter),
-                             ""),
-        # FUN = preprocess_iqr_milp, # TODO: let user decide what this is
-        ...
+  confint <- foreach(
+    type = c("min", "max"),
+    .combine = list,
+    .export = c(
+      "test_stat",
+      "send_note_if",
+      "p_val_interpolation",
+      "preprocess_iqr_milp"
+    )
+  ) %dopar%
+    {
+      # type <- ifelse(direction == 1, "max", "min")
+      step <- ifelse(type == "min", min_step_size, max_step_size) # initial step size
+      direction <- ifelse(type == "min", min_direction, max_direction) # initial direction
+      current_beta <- ifelse(
+        type == "min",
+        min_beta_candidate,
+        max_beta_candidate
       )
-      # If the test-stat takes too long, we end it early and skip the step.
-      # We then move forward in the line search by taking a smaller step in the
-      # same direction with a slight perturbation (see above where we define
-      # the next step).
-      # Otherwise, we record the results, check if the p-value flattens, and
-      # change the direction if need be.
-      # message(paste(type, counter, "did not end early:", is.null(ts$ended_early))) # DEBUG: remove later
-      if (!is.null(ts$ended_early)) {
-        message(paste(type, counter, "ENDED EARLY")) # DEBUG: remove later
-        time_limit <- time_limit * 2 # double the time limit temporarily
-        current_p_val <- "skipped"
-        current_ts_reject <- "skipped"
-        current_ts <- "skipped"
-        num_skips <- num_skips + 1
-      } else {
-        message(paste(type, counter, "DID NOT END EARLY")) # DEBUG: remove later
-        time_limit <- initial_time * 2 # reset time limit
-        # determine test status
-        current_p_val <- ts$p_val
-        current_ts_reject <- ts$p_val < alpha
-        current_ts <- ts$test_stat
-        # check if change in p-value is small
-        if (abs(current_p_val - old_p_val) < p_val_tol) {
-          small_change_in_p_val <- small_change_in_p_val + 1
+      beta_D_null <- rep(NA, p_D)
+      beta_X_null <- rep(NA, p_X)
+      current_ts_reject <- ifelse(
+        type == "min",
+        min_test_stat$p_val < alpha,
+        max_test_stat$p_val < alpha
+      )
+      current_p_val <- ifelse(
+        type == "min",
+        min_test_stat$p_val,
+        max_test_stat$p_val
+      )
+      counter <- 0
+      num_skips <- 0
+      small_change_in_p_val <- 0
+      # set the time limit to be 2 * time limit of initial test-stat computation
+      time_limit <- initial_time * 2
+      ts <- list()
+      ts$ended_early <- NULL # initialize ts$ended_early to be NULL
+      # TODO: stop the while loop if the width of the confidence interval is very large (think about how to present the results)
+      while (
+        step > stopping_tolerance &
+          small_change_in_p_val < small_change_count_tol
+      ) {
+        clock_start_while <- Sys.time() # start the clock for current step
+        counter <- counter + 1 # update counter
+        send_note_if(
+          paste("Type & Counter:", type, counter),
+          show_progress,
+          message
+        ) # DEBUG: consider removing this
+        old_beta <- current_beta # save previous beta
+        if (!is.null(ts$ended_early)) {
+          message(paste(type, counter, "PREVIOUSLY ENDED EARLY")) # DEBUG: remove later
+          # If the previous test-stat computation ended early, then we'll take a
+          # tiny step in the same direction with a small perturbation and then
+          # continue the line search.
+          # This only applies *after* we try one iteration of the while loop
+          # (else, ts$ended_early is undefined)
+          perturb <- stats::rnorm(1, mean = 0, sd = step / 5)
+          current_beta <- current_beta + step * direction * 0.5 + perturb
         } else {
-          small_change_in_p_val <- 0
+          message(paste(type, counter, "PREVIOUSLY DID NOT END EARLY")) # DEBUG: remove later
+          # If the previous test-stat computation successfully ran, then we'll
+          # take a step in the specified direction and then continue the line
+          # search.
+          old_p_val <- current_p_val # save previous p-value if previous step wasn't skipped
+          old_ts_reject <- current_ts_reject # save previous status of test if previous step wasn't skipped
+          current_beta <- current_beta + step * direction # update beta
+          print(paste(
+            "Type:",
+            type,
+            "| Counter:",
+            counter,
+            "| Current Beta:",
+            current_beta
+          ))
         }
-        message(paste(type, counter, "Update p-val count")) # DEBUG: remove later
-        # update direction and step size
-        ### TODO: remove; I don't think this is necessary. We just need to flip the direction if we cross the boundary
-        ### if (current_ts_reject) {
-        ###   # if we reject, then we want to move to the right if we're searching
-        ###   # for the lower bound or move to the left if we're searching for the
-        ###   # upper bound.
-        ###   direction <- ifelse(type == "min", 1, -1)
-        ### } else {
-        ###   # if we fail to reject, then we want to move the left if we're
-        ###   # searching for the lower bound or move to the right if we're
-        ###   # searching for the upper bound.
-        ###   direction <- ifelse(type == "min", -1, 1)
-        ### }
-        if (old_ts_reject != current_ts_reject) {
-          # cross boundary of CI => change direction
-          direction <- direction * -1
-          step <- step * step_rate
+        # construct null
+        if (endogeneous) {
+          beta_D_null[index] <- current_beta
+        } else {
+          beta_X_null[index] <- current_beta
         }
-        message(paste(type, counter, "Update direction (if necessary)")) # DEBUG: remove later
+        # find test stat
+        ts <- test_stat(
+          beta_D_null = beta_D_null,
+          beta_X_null = beta_X_null,
+          alpha = alpha,
+          Y = Y,
+          X = X,
+          D = D,
+          Z = Z,
+          Phi = Phi,
+          tau = tau,
+          B = B,
+          orthogonalize_statistic = orthogonalize_statistic,
+          homoskedasticity = homoskedasticity,
+          kernel = kernel,
+          show_progress = show_progress,
+          residuals = residuals,
+          weights = weights,
+          solver = solver,
+          TimeLimit = time_limit,
+          globalTimeLimit = time_limit,
+          LogFileName = ifelse(
+            save_log,
+            paste0(log_dir, "/", date_time, "_", type, "_step", counter),
+            ""
+          ),
+          # FUN = preprocess_iqr_milp, # TODO: let user decide what this is
+          ...
+        )
+        # If the test-stat takes too long, we end it early and skip the step.
+        # We then move forward in the line search by taking a smaller step in the
+        # same direction with a slight perturbation (see above where we define
+        # the next step).
+        # Otherwise, we record the results, check if the p-value flattens, and
+        # change the direction if need be.
+        # message(paste(type, counter, "did not end early:", is.null(ts$ended_early))) # DEBUG: remove later
+        if (!is.null(ts$ended_early)) {
+          message(paste(type, counter, "ENDED EARLY")) # DEBUG: remove later
+          time_limit <- time_limit * 2 # double the time limit temporarily
+          current_p_val <- "skipped"
+          current_ts_reject <- "skipped"
+          current_ts <- "skipped"
+          num_skips <- num_skips + 1
+        } else {
+          message(paste(type, counter, "DID NOT END EARLY")) # DEBUG: remove later
+          time_limit <- initial_time * 2 # reset time limit
+          # determine test status
+          current_p_val <- ts$p_val
+          current_ts_reject <- ts$p_val < alpha
+          current_ts <- ts$test_stat
+          # check if change in p-value is small
+          if (abs(current_p_val - old_p_val) < p_val_tol) {
+            small_change_in_p_val <- small_change_in_p_val + 1
+          } else {
+            small_change_in_p_val <- 0
+          }
+          message(paste(type, counter, "Update p-val count")) # DEBUG: remove later
+          # update direction and step size
+          ### TODO: remove; I don't think this is necessary. We just need to flip the direction if we cross the boundary
+          ### if (current_ts_reject) {
+          ###   # if we reject, then we want to move to the right if we're searching
+          ###   # for the lower bound or move to the left if we're searching for the
+          ###   # upper bound.
+          ###   direction <- ifelse(type == "min", 1, -1)
+          ### } else {
+          ###   # if we fail to reject, then we want to move the left if we're
+          ###   # searching for the lower bound or move to the right if we're
+          ###   # searching for the upper bound.
+          ###   direction <- ifelse(type == "min", -1, 1)
+          ### }
+          if (old_ts_reject != current_ts_reject) {
+            # cross boundary of CI => change direction
+            direction <- direction * -1
+            step <- step * step_rate
+          }
+          message(paste(type, counter, "Update direction (if necessary)")) # DEBUG: remove later
+        }
+
+        clock_end_while <- Sys.time()
+        elapsed_while <- difftime(
+          clock_end_while,
+          clock_start_while,
+          units = "mins"
+        )
+
+        # save results
+        results <- c(
+          type, # min or max
+          counter, # iteration through while loop
+          index, # coefficient of interest
+          homoskedasticity, # homoskedasticity
+          kernel, # kernel (only relevant if homoskedasticity is FALSE)
+          endogeneous, # coefficient of interest
+          current_beta, # current value of null
+          current_p_val, # current p-value
+          current_ts, # current test-stat
+          current_ts_reject, # p-val < alpha => reject null?
+          elapsed_while, # time for current iteration
+          step, # new step
+          direction, # new direction
+          stopping_tolerance
+        ) # stopping tolerance
+        if (create_log) {
+          file_path <- paste0(
+            log_dir,
+            "/",
+            date_time,
+            "_",
+            stub,
+            "_",
+            type,
+            "_counter_",
+            counter,
+            ".csv"
+          )
+          file.create(file_path)
+          cat(results, sep = ",", file = file_path)
+          cat("\n", sep = ",", file = file_path, append = TRUE) # add newline at EOF
+          message(paste(type, counter, "SAVE RESULTS")) # DEBUG: remove later
+        }
+      } # end of while loop
+
+      message(paste(type, "leave while loop:", TRUE)) # DEBUG: remove later
+
+      if (small_change_in_p_val < small_change_count_tol) {
+        # Linearly interpolate between previous two values of beta
+        # One of these values of beta will be inside the confidence interval, while
+        # the other value is outside the confidence interval.
+        p_val_interpolation_result <- p_val_interpolation(
+          old_p_val = old_p_val,
+          new_p_val = current_p_val,
+          old_beta = old_beta,
+          new_beta = current_beta,
+          alpha = alpha
+        )
+        beta_border <- p_val_interpolation_result$beta_border
+        pi <- p_val_interpolation_result$pi
+        # pair_p_val <- c(old_p_val, current_p_val)
+        # ordered <- order(pair_p_val) # ordered[1] = index of smaller p-value
+        # pi <- (alpha - pair_p_val[ordered[1]]) /
+        #   (pair_p_val[ordered[2]] - pair_p_val[ordered[1]])
+        pair_beta <- c(old_beta, current_beta)
+        # beta_border <- (1 - pi) * pair_beta[ordered[1]] + pi * pair_beta[ordered[2]]
+        print(paste(
+          "Type:",
+          type,
+          "| Pair Beta:",
+          paste(pair_beta, collapse = ", ")
+        )) # DEBUG: remove later?
+        print(paste("Type:", type, "| pi:", pi)) # DEBUG: remove later?
+        print(paste("Type:", type, "| Beta Border:", beta_border)) # DEBUG: remove later?
+        c(beta_border, counter, num_skips) # this is what we return at end of foreach loop
+      } else {
+        paste("p-val flattens for", type)
       }
-
-      clock_end_while <- Sys.time()
-      elapsed_while <- difftime(clock_end_while,
-                                clock_start_while,
-                                units = "mins")
-
-      # save results
-      results <- c(type,                # min or max
-                   counter,             # iteration through while loop
-                   index,               # coefficient of interest
-                   homoskedasticity,    # homoskedasticity
-                   kernel,              # kernel (only relevant if homoskedasticity is FALSE)
-                   endogeneous,         # coefficient of interest
-                   current_beta,        # current value of null
-                   current_p_val,       # current p-value
-                   current_ts,          # current test-stat
-                   current_ts_reject,   # p-val < alpha => reject null?
-                   elapsed_while,       # time for current iteration
-                   step,                # new step
-                   direction,           # new direction
-                   stopping_tolerance)  # stopping tolerance
-      if (create_log) {
-        file_path <- paste0(log_dir, "/",
-                            date_time, "_", stub, "_",
-                            type, "_counter_", counter, ".csv")
-        file.create(file_path)
-        cat(results, sep = ",", file = file_path)
-        cat("\n", sep = ",",
-            file = file_path,
-            append = TRUE) # add newline at EOF
-        message(paste(type, counter, "SAVE RESULTS")) # DEBUG: remove later
-      }
-    } # end of while loop
-
-    message(paste(type, "leave while loop:", TRUE)) # DEBUG: remove later
-
-    if (small_change_in_p_val < small_change_count_tol) {
-      # Linearly interpolate between previous two values of beta
-      # One of these values of beta will be inside the confidence interval, while
-      # the other value is outside the confidence interval.
-      p_val_interpolation_result <- p_val_interpolation(
-        old_p_val = old_p_val,
-        new_p_val = current_p_val,
-        old_beta = old_beta,
-        new_beta = current_beta,
-        alpha = alpha
-      )
-      beta_border <- p_val_interpolation_result$beta_border
-      pi <- p_val_interpolation_result$pi
-      # pair_p_val <- c(old_p_val, current_p_val)
-      # ordered <- order(pair_p_val) # ordered[1] = index of smaller p-value
-      # pi <- (alpha - pair_p_val[ordered[1]]) /
-      #   (pair_p_val[ordered[2]] - pair_p_val[ordered[1]])
-      pair_beta <- c(old_beta, current_beta)
-      # beta_border <- (1 - pi) * pair_beta[ordered[1]] + pi * pair_beta[ordered[2]]
-      print(paste("Type:", type, "| Pair Beta:", paste(pair_beta, collapse = ", "))) # DEBUG: remove later?
-      print(paste("Type:", type, "| pi:", pi)) # DEBUG: remove later?
-      print(paste("Type:", type, "| Beta Border:", beta_border)) # DEBUG: remove later?
-      c(beta_border, counter, num_skips) # this is what we return at end of foreach loop
-    } else {
-      paste("p-val flattens for", type)
-    }
-  } # end of for loop
+    } # end of for loop
 
   message(paste("leave foreach loop:", TRUE)) # DEBUG: remove later
 
@@ -777,11 +875,21 @@ line_confint_interpolation <- function(index,
   out$max_counter <- max_counter
 
   # save counter and skips information as a string for recording information
-  out$counter <- paste("min:", min_counter, " (skipped:", min_skips, ")",
-                       "| max:", max_counter, "(skipped:", max_skips, ")")
+  out$counter <- paste(
+    "min:",
+    min_counter,
+    " (skipped:",
+    min_skips,
+    ")",
+    "| max:",
+    max_counter,
+    "(skipped:",
+    max_skips,
+    ")"
+  )
 
   # get beta's
-  confint <- sapply(confint, function(i) i[[1]]) # get beta 
+  confint <- sapply(confint, function(i) i[[1]]) # get beta
   flattens_min <- grepl("p-val flattens for min", confint)
   flattens_max <- grepl("p-val flattens for max", confint)
   flattens <- flattens_min + flattens_max
@@ -819,15 +927,17 @@ line_confint_interpolation <- function(index,
   message(paste("Clock stopped:", clock_end))
 
   # save results
-  results <- data.frame(index = index,
-                        endogeneous = endogeneous,
-                        homoskedasticity = homoskedasticity,
-                        kernel = kernel,
-                        alpha = alpha,
-                        lower = confint[1],
-                        upper = confint[2],
-                        cores = cores,
-                        minutes = elapsed_time)
+  results <- data.frame(
+    index = index,
+    endogeneous = endogeneous,
+    homoskedasticity = homoskedasticity,
+    kernel = kernel,
+    alpha = alpha,
+    lower = confint[1],
+    upper = confint[2],
+    cores = cores,
+    minutes = elapsed_time
+  )
 
   if (create_log) {
     # save results in CSV
@@ -839,20 +949,22 @@ line_confint_interpolation <- function(index,
       # TODO: order by counter
       concatenate_csvs(
         log_dir,
-        cols = c("type",
-                 "counter",
-                 "index",
-                 "homoskedasticity",
-                 "kernel",
-                 "endogeneous",
-                 "current_beta",
-                 "current_p_val",
-                 "test_stat",
-                 "current_ts_reject",
-                 "elapsed_while",
-                 "new_step",
-                 "new_direction",
-                 "stopping_tolerance"),
+        cols = c(
+          "type",
+          "counter",
+          "index",
+          "homoskedasticity",
+          "kernel",
+          "endogeneous",
+          "current_beta",
+          "current_p_val",
+          "test_stat",
+          "current_ts_reject",
+          "elapsed_while",
+          "new_step",
+          "new_direction",
+          "stopping_tolerance"
+        ),
         pattern = paste0(date_time, "_", stub, "_", "min", "_counter_"),
         merged_name = paste0(date_time, "_", stub, "_", "min", ".csv"),
         remove_after_merge = TRUE,
@@ -860,20 +972,22 @@ line_confint_interpolation <- function(index,
       )
       concatenate_csvs(
         log_dir,
-        cols = c("type",
-                 "counter",
-                 "index",
-                 "homoskedasticity",
-                 "kernel",
-                 "endogeneous",
-                 "current_beta",
-                 "current_p_val",
-                 "test_stat",
-                 "current_ts_reject",
-                 "elapsed_while",
-                 "new_step",
-                 "new_direction",
-                 "stopping_tolerance"),
+        cols = c(
+          "type",
+          "counter",
+          "index",
+          "homoskedasticity",
+          "kernel",
+          "endogeneous",
+          "current_beta",
+          "current_p_val",
+          "test_stat",
+          "current_ts_reject",
+          "elapsed_while",
+          "new_step",
+          "new_direction",
+          "stopping_tolerance"
+        ),
         pattern = paste0(date_time, "_", stub, "_", "max", "_counter_"),
         merged_name = paste0(date_time, "_", stub, "_", "max", ".csv"),
         remove_after_merge = TRUE,

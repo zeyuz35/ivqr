@@ -31,6 +31,8 @@ line_confint(
   homoskedasticity = FALSE,
   kernel = "Powell",
   residuals = NULL,
+  weights = NULL,
+  solver = c("gurobi", "highs"),
   show_progress = TRUE,
   print_test_stat_results = TRUE,
   initial_TimeLimit = NULL,
@@ -118,6 +120,13 @@ defaults to FALSE (boolean)}
 
 \item{residuals}{Residuals from IQR MILP program; if NULL (default), use
 residuals from short-iqr regression}
+
+\item{weights}{vector of observation weights; if supplied, the algorithm fits
+to minimize the sum of the weights multiplied into the absolute residuals.
+The length of weights must be the same as the number of observations.
+The weights must be nonnegative.}
+
+\item{solver}{Choice of solver: "gurobi" (default) or "highs"}
 
 \item{show_progress}{If TRUE (default), sends progress messages during
 execution (boolean); also passed to \code{preprocess_iqr_milp}}

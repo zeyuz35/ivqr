@@ -72,10 +72,7 @@
 #' @seealso \code{\link{true_chen_lee}}
 #'
 #' @export
-chen_lee <- function(n = 500,
-                     p_D = 3,
-                     beta_D_errors = NULL) {
-
+chen_lee <- function(n = 500, p_D = 3, beta_D_errors = NULL) {
   # If p_D is less than 3, we will first create a Chen and Lee simulation with
   # p_D = 3 and then remove the extra endogeneous variables and extra errors in
   # Steps 3, 4, and 5.
@@ -105,7 +102,7 @@ chen_lee <- function(n = 500,
   # display on page 557 of Chen and Lee (2017).
 
   # Step 2: Draw errors from multivariate normal.
-  errors <- MASS::mvrnorm(n, mu = rep(0, nrow(V)), Sigma = 0.25 *  V)
+  errors <- MASS::mvrnorm(n, mu = rep(0, nrow(V)), Sigma = 0.25 * V)
   eps <- errors[, 1] # first column is error in the scale model
   nu <- errors[, -1] # all other columns are shocks to instruments to define D
 
@@ -131,13 +128,13 @@ chen_lee <- function(n = 500,
   Y <- X + D %*% beta_D + (0.5 + D %*% beta_D_errors) * eps
 
   list(
-   "Y" = Y,
-   "D" = D,
-   "Z" = Z,
-   "X" = X,
-   "errors" = errors,
-   "beta_D_errors" = beta_D_errors,
-   "V" = V
+    "Y" = Y,
+    "D" = D,
+    "Z" = Z,
+    "X" = X,
+    "errors" = errors,
+    "beta_D_errors" = beta_D_errors,
+    "V" = V
   )
 }
 
