@@ -21,8 +21,8 @@
 #' @param Phi Transformation of X and Z to be used in the program;
 #'  defaults to the linear projection of D on X and Z (matrix with n rows)
 #' @param tau Quantile (number between 0 and 1)
-#' @param solver Choice of solver: "gurobi" (default) or "highs"
-#' @param ... Arguments passed to \code{iqr_milp_gurobi} or \code{iqr_milp_highs}
+#' @param solver Choice of solver: "gurobi" (default), "highs", or "ecos"
+#' @param ... Arguments passed to \code{iqr_milp_gurobi}, \code{iqr_milp_highs}, or \code{iqr_milp_ecos}
 #'
 #' @export
 iqr_milp <- function(
@@ -32,7 +32,7 @@ iqr_milp <- function(
   Z,
   Phi = linear_projection(D, X, Z),
   tau,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   ...
 ) {
   solver <- match.arg(solver)
@@ -46,7 +46,7 @@ iqr_milp <- function(
       tau = tau,
       ...
     ))
-  } else {
+  } else if (solver == "highs") {
     return(iqr_milp_highs(
       Y = Y,
       X = X,
@@ -56,8 +56,11 @@ iqr_milp <- function(
       tau = tau,
       ...
     ))
+  } else {
+    return(iqr_milp_ecos(Y = Y, X = X, D = D, Z = Z, Phi = Phi, tau = tau, ...))
   }
 }
+
 
 ### iqr_milp_gurobi -------------------------
 #' Compute inverse quantile regression estimator using Gurobi

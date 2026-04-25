@@ -25,6 +25,7 @@ RoxygenNote: 7.3.3
 Imports: 
     gurobi,
     highs,
+    ECOSolveR,
     quantreg,
     stats,
     MASS,

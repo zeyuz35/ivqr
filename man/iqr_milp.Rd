@@ -11,7 +11,7 @@ iqr_milp(
   Z,
   Phi = linear_projection(D, X, Z),
   tau,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   ...
 )
 }
@@ -29,9 +29,9 @@ defaults to the linear projection of D on X and Z (matrix with n rows)}
 
 \item{tau}{Quantile (number between 0 and 1)}
 
-\item{solver}{Choice of solver: "gurobi" (default) or "highs"}
+\item{solver}{Choice of solver: "gurobi" (default), "highs", or "ecos"}
 
-\item{...}{Arguments passed to \code{iqr_milp_gurobi} or \code{iqr_milp_highs}}
+\item{...}{Arguments passed to \code{iqr_milp_gurobi}, \code{iqr_milp_highs}, or \code{iqr_milp_ecos}}
 }
 \description{
 Solve a mixed integer linear program to compute the inverse

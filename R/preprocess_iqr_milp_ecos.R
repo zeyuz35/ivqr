@@ -1,96 +1,22 @@
 ### Meta -------------------------
 ###
-### Title: Compute IQR estimator by preprocessing MILP
+### Title: Compute IQR estimator by preprocessing MILP using ECOS
 ###
 ### Description: The IQR estimator is computed by solving a MILP.
 ### This function pre-processes the data and fixes the sign of the residuals of
-### outliers to speed up the procedure.
+### outliers to speed up the procedure using the ECOS solver.
 ###
-### Author: Omkar A. Katta
+### Author: Omkar A. Katta (adapted for ECOS)
 ###
 
-### preprocess_iqr_milp -------------------------
-#' Compute IQR estimator by preprocessing MILP
-#'
-#' Fix the sign of outliers' residuals to solve the IQR MILP more quickly
-#' using either Gurobi or HiGHS.
-#'
-#' @inheritParams iqr_milp
-#' @param solver Choice of solver: "gurobi" (default), "highs", or "ecos"
-#' @param ... Arguments passed to \code{preprocess_iqr_milp_gurobi}, \code{preprocess_iqr_milp_highs}, or \code{preprocess_iqr_milp_ecos}
-#'
-#' @export
-preprocess_iqr_milp <- function(
-  Y,
-  D,
-  X,
-  Z,
-  Phi = linear_projection(D, X, Z),
-  tau,
-  solver = c("gurobi", "highs", "ecos"),
-  ...
-) {
-  solver <- match.arg(solver)
-  if (solver == "gurobi") {
-    return(preprocess_iqr_milp_gurobi(
-      Y = Y,
-      D = D,
-      X = X,
-      Z = Z,
-      Phi = Phi,
-      tau = tau,
-      ...
-    ))
-  } else if (solver == "highs") {
-    return(preprocess_iqr_milp_highs(
-      Y = Y,
-      D = D,
-      X = X,
-      Z = Z,
-      Phi = Phi,
-      tau = tau,
-      ...
-    ))
-  } else {
-    return(preprocess_iqr_milp_ecos(
-      Y = Y,
-      D = D,
-      X = X,
-      Z = Z,
-      Phi = Phi,
-      tau = tau,
-      ...
-    ))
-  }
-}
-
-
-### preprocess_iqr_milp_gurobi -------------------------
-#' Compute IQR estimator by preprocessing MILP using Gurobi
+### preprocess_iqr_milp_ecos -------------------------
+#' Compute IQR estimator by preprocessing MILP using ECOS
 #'
 #' @inheritParams preprocess_iqr_milp
-#' @param M A large number that bounds the absolute value of the residuals
-#'  (a positive number); defaults to 2 times the largest absolute residual from
-#'  quantile regression of Y on X and D
-#' @param prop_alpha_initial Initial value of the bandwidth \eqn{alpha};
-#' @param TimeLimit Maximum time (in seconds) spent on a linear program;
-#'  defaults to heuristic (numeric)
-#' @param globalTimeLimit Maximum time (in seconds) spent on the entire
-#' preprocessing function; defaults to Inf (i.e., no time limit) (numeric)
-#'  thus, 1 - \code{prop_alpha_initial} is the proportion of observations whose
-#'  dual variables (i.e., sign of the residuals) are fixed at the start
-#'  (number between 0 and 1)
-#' @param r Rate at which we increase the bandwidth (\eqn{alpha}) at every
-#'  iteration (number greater than 1)
-#' @param show_iterations If TRUE, print the iteration number to the console;
-#'  defaults to FALSE (boolean)
-#' @param LogFileExt Extension of Gurobi log file; If \code{LogFileName} is
-#'  empty, then Gurobi log won't be saved and this argument will be ignored;
-#'  defaults to "log" (string)
-#' @param ... Arguments that will be passed to \code{iqr_milp_gurobi}
+#' @param ... Arguments passed to \code{iqr_milp_ecos}
 #'
 #' @export
-preprocess_iqr_milp_gurobi <- function(
+preprocess_iqr_milp_ecos <- function(
   Y,
   D,
   X,
@@ -104,7 +30,8 @@ preprocess_iqr_milp_gurobi <- function(
   prop_alpha_initial = 0.7,
   r = 1.25,
   show_iterations = FALSE,
-  LogFileExt = ".log",
+  quietly = TRUE,
+  show_progress = TRUE,
   ...
 ) {
   out <- list() # Initialize list of results to return
@@ -149,9 +76,6 @@ preprocess_iqr_milp_gurobi <- function(
 
   # Determine M before iqr_milp to avoid rerunning quantreg::rq
   if (is.null(M)) {
-    # by default, M = 2 * max(resid from QR of Y on X and D)
-    # TODO: update heuristic for choosing M
-    # TODO: update documentation with default M
     max_qr <- max(abs(resid))
     M <- 2 * max_qr
   }
@@ -164,29 +88,24 @@ preprocess_iqr_milp_gurobi <- function(
   time_elapsed_per_iteration <- c()
   final_objective_per_iteration <- c()
 
-  # Continue the while loop if the program took too long to solve or if
-  # the objective (i.e., absolute value of beta_Z) is not 0. Note that
-  # if the program is infeasible, i.e., the objective was NULL, we also
-  # continue the while loop (we mechanically set the objective to be nonzero
-  # later in the code).
   counter <- 0
-  while (status == "TIME_LIMIT" || obj != 0) {
+  obj <- 1 # initial value to enter loop
+  while (status == "TIME_LIMIT" || obj > 1e-6) {
     counter <- counter + 1
     send_note_if(paste("Iteration", counter), show_iterations, message)
     while_start_time <- Sys.time()
-    # TODO: Is it possible for two iterations of the while loop to have the same number of fixed variables?
-    # Fix the most negative and most positive residuals
+
     O_neg <- which(resid < -1 * alphawidth)
     O_pos <- which(resid > alphawidth)
     O <- c(O_neg, O_pos)
     send_note_if(paste("Alpha:", alphawidth), show_iterations, message)
-    # TODO: are we fixing the "dual" variables? I think we can improve the message below
     send_note_if(
       paste("Number of Fixed Dual Variables:", length(O)),
       show_iterations,
       message
     )
     num_fixed_vars_per_iteration <- c(num_fixed_vars_per_iteration, length(O))
+
     # Heuristic for time limit
     if (length(O) == 0) {
       TT <- Inf
@@ -198,11 +117,12 @@ preprocess_iqr_milp_gurobi <- function(
     }
     if (TT > globalTimeLimit) {
       TT <- globalTimeLimit
-    } # TODO: check if globalTimeLimit is less than TimeLimit
+    }
     send_note_if(paste("TT:", TT), show_iterations, message)
     time_limit_per_iteration <- c(time_limit_per_iteration, TT)
-    # IQR
-    fit <- iqr_milp_gurobi(
+
+    # IQR using ECOS
+    fit <- iqr_milp_ecos(
       Y = Y,
       X = X,
       D = D,
@@ -213,10 +133,12 @@ preprocess_iqr_milp_gurobi <- function(
       O_neg = O_neg,
       O_pos = O_pos,
       TimeLimit = TT,
-      M = M, # by default, M = 2 * max(resid from QR of Y on X and D)
-      LogFileExt = paste0("_", counter, LogFileExt),
+      M = M,
+      quietly = quietly,
+      show_progress = show_progress,
       ...
     )
+
     final_objective_per_iteration <- c(
       final_objective_per_iteration,
       ifelse(is.null(fit$objval), "NULL", as.character(round(fit$objval, 3)))
@@ -227,13 +149,15 @@ preprocess_iqr_milp_gurobi <- function(
       obj <- fit$objval
     }
     status <- fit$status
-    alphawidth <- alphawidth * r # TODO: add check to make sure alphawidth is not 0; otherwise, infeasibility will repeat ad infinitum and we won't leave while loop
-    if (show_iterations) {
-      print(paste("Iteration", counter, "complete"))
-    }
-    if (TT == Inf & obj != 0) {
+    alphawidth <- alphawidth * r
+    send_note_if(
+      paste("Iteration", counter, "complete"),
+      show_iterations,
+      message
+    )
+    if (TT == Inf & obj > 1e-6) {
       warning("Nonzero Coefficients on Instruments")
-      break # exit while loop
+      break
     }
     current <- Sys.time()
     while_elapsed <- difftime(current, while_start_time, units = "secs")
@@ -242,7 +166,7 @@ preprocess_iqr_milp_gurobi <- function(
     elapsed_time <- difftime(current, clock_start, units = "secs")
     if (as.numeric(elapsed_time) > globalTimeLimit) {
       warning(paste("Global Time Limit of", globalTimeLimit, "reached."))
-      break # exit while loop
+      break
     }
   }
 

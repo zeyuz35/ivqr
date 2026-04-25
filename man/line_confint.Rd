@@ -32,7 +32,7 @@ line_confint(
   kernel = "Powell",
   residuals = NULL,
   weights = NULL,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   show_progress = TRUE,
   print_test_stat_results = TRUE,
   initial_TimeLimit = NULL,
@@ -126,7 +126,7 @@ to minimize the sum of the weights multiplied into the absolute residuals.
 The length of weights must be the same as the number of observations.
 The weights must be nonnegative.}
 
-\item{solver}{Choice of solver: "gurobi" (default) or "highs"}
+\item{solver}{Choice of solver: "gurobi" (default), "highs", or "ecos"}
 
 \item{show_progress}{If TRUE (default), sends progress messages during
 execution (boolean); also passed to \code{preprocess_iqr_milp}}

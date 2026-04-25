@@ -20,7 +20,7 @@ miqcp_proj(
   homoskedasticity = FALSE,
   kernel = "Powell",
   residuals = NULL,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   O_neg = NULL,
   O_pos = NULL,
   M = NULL,
@@ -78,8 +78,9 @@ defaults to FALSE (boolean)}
 \item{residuals}{Residuals from IQR MILP program; if NULL (default), use
 naive residuals from quantile regression}
 
-\item{solver}{Choice of solver: "gurobi" (default) or "highs" (Note: HiGHS does
-not support MIQCP and will throw an error if selected here)}
+\item{solver}{Choice of solver: "gurobi" (default), "highs", or "ecos"
+(Note: HiGHS does not support MIQCP and will throw an error if selected
+here; ECOS supports MIQCP via SOCP reformulation)}
 }
 \value{
 A named list of # TODO: update

@@ -81,7 +81,7 @@
 #'  to minimize the sum of the weights multiplied into the absolute residuals.
 #'  The length of weights must be the same as the number of observations.
 #'  The weights must be nonnegative.
-#' @param solver Choice of solver: "gurobi" (default) or "highs"
+#' @param solver Choice of solver: "gurobi" (default), "highs", or "ecos"
 #' @param show_progress If TRUE (default), sends progress messages during
 #'  execution (boolean); also passed to \code{preprocess_iqr_milp}
 #' @param print_results If TRUE (default), print the test-statistic, p-value,
@@ -103,8 +103,9 @@ test_stat_threshold <- function(
   a_hat = NULL,
   residuals = NULL,
   weights = NULL,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   kernel = "Powell",
+
   show_progress = TRUE,
   print_results = TRUE,
   # FUN = preprocess_iqr_milp,

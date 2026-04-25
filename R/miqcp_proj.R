@@ -54,8 +54,9 @@
 #'  \code{homoskedasticity} is FALSE
 #' @param residuals Residuals from IQR MILP program; if NULL (default), use
 #'  naive residuals from quantile regression
-#' @param solver Choice of solver: "gurobi" (default) or "highs" (Note: HiGHS does
-#'  not support MIQCP and will throw an error if selected here)
+#' @param solver Choice of solver: "gurobi" (default), "highs", or "ecos"
+#'  (Note: HiGHS does not support MIQCP and will throw an error if selected
+#'  here; ECOS supports MIQCP via SOCP reformulation)
 #' @inheritParams iqr_milp
 #'
 #' @importFrom methods as
@@ -100,7 +101,7 @@ miqcp_proj <- function(
   homoskedasticity = FALSE,
   kernel = "Powell",
   residuals = NULL,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   O_neg = NULL,
   O_pos = NULL,
   M = NULL,
@@ -116,7 +117,7 @@ miqcp_proj <- function(
   solver <- match.arg(solver)
   if (solver == "highs") {
     stop(
-      "HiGHS solver does not support quadratic constraints (MIQCP). Please use 'gurobi'."
+      "HiGHS solver does not support quadratic constraints (MIQCP). Please use 'gurobi' or 'ecos'."
     )
   }
 
@@ -577,30 +578,9 @@ miqcp_proj <- function(
     A_pp_k, # Pre-processing - fixing k
     A_pp_l
   ) # Pre-processing - fixing l
-  # message(paste("A:", nrow(proj$A), ncol(proj$A)))
-  # message(paste("A_pf:", nrow(A_pf), ncol(A_pf)))
-  # message(paste("A_df_X:", nrow(A_df_X), ncol(A_df_X)))
-  # message(paste("A_df_Phi:", nrow(A_df_Phi), ncol(A_df_Phi)))
-  # message(paste("A_cs_uk:", nrow(A_cs_uk), ncol(A_cs_uk)))
-  # message(paste("A_cs_vl:", nrow(A_cs_vl), ncol(A_cs_vl)))
-  # message(paste("A_cs_ak:", nrow(A_cs_ak), ncol(A_cs_ak)))
-  # message(paste("A_cs_al:", nrow(A_cs_al), ncol(A_cs_al)))
-  # message(paste("A_pp_a:", nrow(A_pp_a), ncol(A_pp_a)))
-  # message(paste("A_pp_k:", nrow(A_pp_k), ncol(A_pp_k)))
-  # message(paste("A_pp_l:", nrow(A_pp_l), ncol(A_pp_l)))
   if (sparse) {
     proj$A <- as(proj$A, "sparseMatrix")
   }
-
-  # out$b_pf <- b_pf # DEBUG
-  # out$b_df_X <- b_df_X # DEBUG
-  # out$b_cs_uk <- b_cs_uk # DEBUG
-  # out$b_cs_vl <- b_cs_vl # DEBUG
-  # out$b_cs_ak <- b_cs_ak # DEBUG
-  # out$b_cs_al <- b_cs_al # DEBUG
-  # out$b_pp_a <- b_pp_a # DEBUG
-  # out$b_pp_k <- b_pp_k # DEBUG
-  # out$b_pp_l <- b_pp_l # DEBUG
 
   proj$rhs <- c(
     b_pf, # Primal Feasibility
@@ -613,7 +593,6 @@ miqcp_proj <- function(
     b_pp_k, # Pre-processing - fixing k
     b_pp_l
   ) # Pre-processing - fixing l
-  # message(paste("b:", length(proj$rhs)))
 
   proj$sense <- c(
     sense_pf, # Primal Feasibility
@@ -626,30 +605,172 @@ miqcp_proj <- function(
     sense_pp_k, # Pre-processing - fixing k
     sense_pp_l
   ) # Pre-processing - fixing l
-  # message(paste("sense:", length(proj$sense)))
 
-  # Quadratic Constraint
-  if (sparse) {
-    qc <- as(qc, "sparseMatrix")
-    q <- as(q, "sparseVector")
+  # Solve program
+  if (solver == "gurobi") {
+    # Quadratic Constraint
+    if (sparse) {
+      qc <- methods::as(qc, "sparseMatrix")
+      q <- methods::as(q, "sparseVector")
+    }
+    proj$quadcon[[1]]$Qc <- qc
+    proj$quadcon[[1]]$q <- q
+    proj$quadcon[[1]]$rhs <- qc_rhs
+
+    proj$lb <- lb
+    proj$ub <- ub
+    proj$vtype <- vtype
+    proj$modelsense <- sense
+    params$TimeLimit <- TimeLimit
+    if (LogFileName != "") {
+      params$LogFile <- paste0(LogFileName, LogFileExt)
+    }
+
+    result <- gurobi::gurobi(proj, params)
+  } else {
+    # ECOS Solver
+    if (!is.list(params) || !("MI_MAX_ITERS" %in% names(params))) {
+      # params passed in are likely Gurobi params, replace with ECOS defaults
+      params <- ECOSolveR::ecos.control(
+        mi_max_iters = 10000L,
+        feastol = 1e-6,
+        abstol = 1e-6,
+        reltol = 1e-6
+      )
+    }
+    params$verbose <- ifelse(quietly, 0L, 1L)
+
+    # Reformulate quadratic constraint x'Qx + q'x <= rhs as SOC constraint
+    # Standard SOC form: ||Ax + b||_2 <= c'x + d
+    # becomes G = [-c'; -A], h = [d; b] in ECOS Gx + s = h, s in SOC
+
+    # We have x'Qx + q'x <= qc_rhs
+    # Q has block 'tmp' for 'a' variables. tmp = B * solve(B_tilde' * B_tilde) * B'
+    # Let K = solve(B_tilde' * B_tilde)
+    K <- solve(t(B_tilde) %*% B_tilde)
+    eig_K <- eigen(K, symmetric = TRUE)
+    K_sqrt <- eig_K$vectors %*%
+      diag(sqrt(pmax(eig_K$values, 0)), nrow = length(eig_K$values)) %*%
+      t(eig_K$vectors)
+
+    # M_a = K_sqrt %*% t(B)  # (p_D+p_X) x n
+    M_a <- K_sqrt %*% t(B)
+
+    # Transformation to SOC: || [2*M*x; 1 - (rhs - q'x)] ||_2 <= 1 + (rhs - q'x)
+    # Ax + b = [2 * M_a %*% a; 1 - (qc_rhs - q_a %*% a)]
+    # c'x + d = 1 + (qc_rhs - q_a %*% a)
+    # where q_a is the linear part of the quadratic constraint corresponding to 'a'
+
+    # Selection indices for 'a'
+    idx_a <- (p_X + p_D + 2 * n + 1):(p_X + p_D + 3 * n)
+    q_a <- q[idx_a]
+
+    # c'x + d:
+    # c_x = -q_a
+    # d = 1 + qc_rhs
+    c_soc <- -q_a
+    d_soc <- 1 + qc_rhs
+
+    # Ax + b:
+    # A_x = [2 * M_a; -q_a]
+    # b = [0; qc_rhs - 1]
+    A_soc <- rbind(2 * M_a, -q_a)
+    b_soc <- c(rep(0, nrow(M_a)), qc_rhs - 1)
+
+    # G_soc = [-c'; -A_soc]
+    # h_soc = [d; b]
+    G_soc_block <- rbind(-t(c_soc), -A_soc)
+    h_soc_block <- c(d_soc, b_soc)
+
+    # Build full G_soc that operates on full x
+    G_soc <- Matrix::sparseMatrix(
+      i = rep(seq_len(nrow(G_soc_block)), each = length(idx_a)),
+      j = rep(idx_a, times = nrow(G_soc_block)),
+      x = as.vector(t(G_soc_block)),
+      dims = c(nrow(G_soc_block), num_decision_vars)
+    )
+
+    # Equality constraints
+    A_ecos <- proj$A[proj$sense == "=", , drop = FALSE]
+    b_ecos <- proj$rhs[proj$sense == "="]
+
+    # Inequality constraints
+    G_ineq <- rbind(
+      proj$A[proj$sense == "<=", , drop = FALSE],
+      -proj$A[proj$sense == ">=", , drop = FALSE]
+    )
+    h_ineq <- c(
+      proj$rhs[proj$sense == "<="],
+      -proj$rhs[proj$sense == ">="]
+    )
+
+    # Bounds
+    I_mat <- diag(1, num_decision_vars)
+    idx_lb <- which(lb != -Inf)
+    G_lb <- -I_mat[idx_lb, , drop = FALSE]
+    h_lb <- -lb[idx_lb]
+    idx_ub <- which(ub != Inf)
+    G_ub <- I_mat[idx_ub, , drop = FALSE]
+    h_ub <- ub[idx_ub]
+
+    G_all <- methods::as(rbind(G_ineq, G_lb, G_ub, G_soc), "sparseMatrix")
+    h_all <- c(h_ineq, h_lb, h_ub, h_soc_block)
+    A_all <- methods::as(A_ecos, "sparseMatrix")
+    b_all <- b_ecos
+
+    bool_vars <- which(vtype == "B")
+
+    # If sense is "max", we need to negate obj since ECOS minimizes by default
+    obj_ecos <- if (sense == "max") -obj else obj
+
+    result_ecos <- ECOSolveR::ECOS_csolve(
+      c = obj_ecos,
+      G = G_all,
+      h = h_all,
+      dims = list(
+        l = length(h_ineq) + length(h_lb) + length(h_ub),
+        q = length(h_soc_block),
+        e = 0L
+      ),
+      A = A_all,
+      b = b_all,
+      bool_vars = bool_vars,
+      control = params
+    )
+
+    status_map <- list(
+      "0" = "OPTIMAL",
+      "1" = "INFEASIBLE",
+      "2" = "UNBOUNDED",
+      "10" = "SUBOPTIMAL",
+      "11" = "TIME_LIMIT",
+      "-1" = "TIME_LIMIT"
+    )
+    exitflag <- as.character(result_ecos$retcodes["exitFlag"])
+    res_status <- status_map[[exitflag]]
+    if (is.null(res_status)) {
+      res_status <- result_ecos$infostring
+    }
+
+    objval_ecos <- as.numeric(result_ecos$summary["pcost"])
+    if (sense == "max") {
+      objval_ecos <- -objval_ecos
+    }
+
+    result <- list(
+      status = res_status,
+      x = result_ecos$x,
+      objval = objval_ecos
+    )
+    if (!quietly) {
+      print("ECOS RESULT SUMMARY:")
+      print(result_ecos$summary)
+      print("ECOS RETCODES:")
+      print(result_ecos$retcodes)
+      print("RESULT LIST:")
+      print(result)
+    }
   }
-  proj$quadcon[[1]]$Qc <- qc
-  proj$quadcon[[1]]$q <- q
-  proj$quadcon[[1]]$rhs <- qc_rhs
-
-  proj$lb <- lb
-  proj$ub <- ub
-  proj$vtype <- vtype
-  proj$modelsense <- sense
-  params$TimeLimit <- TimeLimit
-  if (LogFileName != "") {
-    params$LogFile <- paste0(LogFileName, LogFileExt)
-  }
-
-  # out$proj <- proj # DEBUG
-  # return(out) # DEBUG
-
-  result <- gurobi::gurobi(proj, params)
 
   msg <- paste("Mixed Integer Quadratic Program Complete.")
   send_note_if(msg, show_progress, message)
@@ -667,7 +788,7 @@ miqcp_proj <- function(
   out$params <- params
   out$result <- result
   out$status <- result$status
-  if (result$status %in% c("OPTIMAL", "SUBOPTIMAL")) {
+  if (result$status %in% c("OPTIMAL", "SUBOPTIMAL", "TIME_LIMIT")) {
     answer <- result$x
     out$beta_X <- answer[1:p_X]
     out$beta_D <- answer[(p_X + 1):(p_X + p_D)]

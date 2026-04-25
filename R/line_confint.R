@@ -74,7 +74,7 @@
 #'  to minimize the sum of the weights multiplied into the absolute residuals.
 #'  The length of weights must be the same as the number of observations.
 #'  The weights must be nonnegative.
-#' @param solver Choice of solver: "gurobi" (default) or "highs"
+#' @param solver Choice of solver: "gurobi" (default), "highs", or "ecos"
 #' @inheritParams test_stat
 #'
 #' @import foreach
@@ -109,8 +109,9 @@ line_confint <- function(
   kernel = "Powell",
   residuals = NULL,
   weights = NULL,
-  solver = c("gurobi", "highs"),
+  solver = c("gurobi", "highs", "ecos"),
   show_progress = TRUE,
+
   print_test_stat_results = TRUE, # TODO: document -- value for `print_results` argument in `test_stat()` #nolint
   # FUN = preprocess_iqr_milp,
   initial_TimeLimit = NULL,
